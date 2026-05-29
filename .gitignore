@@ -1,8 +1,24 @@
+# Nim build artifacts
 nimcache/
-nimblecache/
-htmldocs/
+*.o
+*.so
+*.dylib
+*.dll
 
-# Beads / Dolt files (added by bd init)
-.dolt/
-*.db
-.beads-credential-key
+# Compiled test binaries (no extension, produced by testament)
+tests/test_*
+!tests/test_*.nim
+!tests/test_*.nims
+
+# Testament output
+testresults/
+
+# Beads embedded Dolt database
+.beads/embeddeddolt/
+
+# Nimble
+.nimble/
+nimble.lock
+
+# OS
+.DS_Store
