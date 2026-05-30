@@ -150,3 +150,35 @@ Missing files on read return `none()`, not an exception.
 
 † supersnappy compilation on devkitARM (3DS), PSPDEV, and VitaSDK should be verified
   against each toolchain before shipping to those targets.
+
+---
+
+## Installation
+
+Add to your `*.nimble` file:
+
+```
+requires "configy >= 0.1.0"
+```
+
+Or install directly:
+
+```sh
+nimble install configy
+```
+
+---
+
+## Testing
+
+```sh
+nimble test
+```
+
+The test suite covers path resolution, all magic-byte error cases, JSON/binary/typed
+round-trips with and without Snappy compression, and the full `ConfigError` hierarchy.
+CI runs desktop tests on Linux, macOS, and Windows. It also runs platform-define
+compile checks for 3DS, PSP, Vita, and WebAssembly — these verify that the
+`when defined(...)` branches in the library compile cleanly on the host OS, but are
+**not** full cross-compiles (actual cross-compilation requires devkitARM, PSPDEV,
+VitaSDK, or Emscripten, which are not available in standard CI).

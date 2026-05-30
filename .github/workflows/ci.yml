@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Desktop tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: '2.2.0'
+
+      - name: Install dependencies
+        run: nimble install -d -y
+
+      - name: Run tests
+        run: nimble test
+
+  platform-define-check:
+    # Verifies that platform-specific when defined(...) branches compile cleanly
+    # on the host OS (Linux). This is NOT a full cross-compile — it uses only the
+    # platform define without --cpu/--os flags, so it catches Nim-level errors but
+    # not SDK/toolchain incompatibilities. Full cross-compile requires devkitARM
+    # (3DS), PSPDEV (PSP), VitaSDK (Vita), or Emscripten (WASM).
+    name: Platform-define check (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: ds3
+            define: ds3
+          - target: psp
+            define: psp
+          - target: vita
+            define: vita
+          - target: wasm
+            define: emscripten
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: '2.2.0'
+
+      - name: Install dependencies
+        run: nimble install -d -y
+
+      - name: Check platform define branches compile
+        run: |
+          nim c --compileOnly \
+            -d:configyVendor=testvendor \
+            -d:${{ matrix.define }} \
+            --path:src \
+            src/configy.nim
