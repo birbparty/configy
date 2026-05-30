@@ -177,5 +177,8 @@ nimble test
 
 The test suite covers path resolution, all magic-byte error cases, JSON/binary/typed
 round-trips with and without Snappy compression, and the full `ConfigError` hierarchy.
-CI runs desktop tests on Linux and Windows, plus cross-compile smoke checks for 3DS,
-PSP, Vita, and WebAssembly (compile-only; no execution on exotic targets).
+CI runs desktop tests on Linux, macOS, and Windows. It also runs platform-define
+compile checks for 3DS, PSP, Vita, and WebAssembly — these verify that the
+`when defined(...)` branches in the library compile cleanly on the host OS, but are
+**not** full cross-compiles (actual cross-compilation requires devkitARM, PSPDEV,
+VitaSDK, or Emscripten, which are not available in standard CI).
