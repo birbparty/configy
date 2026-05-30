@@ -43,9 +43,11 @@ proc configRoot*(): string {.raises: [ConfigPathError].} =
     let appData = getEnv("APPDATA")
     if appData.len == 0:
       raise newException(ConfigPathError, "APPDATA environment variable is not set")
-    result = appData / VendorNamespace / "config" / ""
+    result = appData / VendorNamespace / "config" & "\\"
   else:
-    result = getHomeDir() / "." & VendorNamespace / "config" / ""
+    # Parentheses required: & has lower precedence than /, so without them
+    # getHomeDir() / "." would collapse the dot before & joins the vendor name.
+    result = getHomeDir() / ("." & VendorNamespace) / "config" & "/"
 
 proc configDir*(app, dep: string): string {.raises: [ConfigPathError].} =
   ## Pure resolver: returns the config directory for app+dep WITHOUT creating it.
@@ -53,7 +55,9 @@ proc configDir*(app, dep: string): string {.raises: [ConfigPathError].} =
   validateComponent(app)
   validateComponent(dep)
   when configyUsesOsPath:
-    result = configRoot() / app / dep / ""
+    # Use DirSep so Windows paths use backslashes consistently.
+    # Avoid / operator: x / "" drops empty components (no trailing sep).
+    result = configRoot() & app & $DirSep & dep & $DirSep
   else:
     result = configRoot() & app & "/" & dep & "/"
 

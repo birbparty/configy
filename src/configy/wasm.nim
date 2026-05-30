@@ -1,5 +1,4 @@
 import std/options
-import configy/capabilities
 import configy/errors
 
 when defined(emscripten):
