@@ -1,6 +1,5 @@
 import std/[os, json, options, strutils]
 import supersnappy
-import configy/capabilities
 import configy/errors
 import configy/paths
 import configy/fs
@@ -65,9 +64,11 @@ proc writeConfigJson*(app, dep, filename: string; data: JsonNode;
     {.raises: [ConfigPathError, ConfigUnsupportedError, ConfigIOError].} =
   ## Serialize data → compress → magic byte → write.
   ## Raises ConfigUnsupportedError if not isWritable().
+  ## On WASM v1: delegates to wasm.setItem which raises ConfigUnsupportedError.
   when defined(emscripten):
     let key = configFile(app, dep, filename)
-    let serialized = if pretty: pretty(data) else: $data
+    # TODO(wasm-v2): add magic-byte framing and compress support for localStorage.
+    let serialized = if pretty: json.pretty(data) else: $data
     wasm.setItem(key, serialized)
   else:
     if not isWritable():
@@ -80,8 +81,10 @@ proc writeConfigJson*(app, dep, filename: string; data: JsonNode;
 proc readConfigJson*(app, dep, filename: string): Option[JsonNode]
     {.raises: [ConfigPathError, ConfigParseError, ConfigIOError].} =
   ## none() if file absent. Checks magic, decompresses, parses JSON.
+  ## On WASM v1: delegates to wasm.getItem which returns none().
   when defined(emscripten):
     let key = configFile(app, dep, filename)
+    # TODO(wasm-v2): strip magic-byte framing and decompress from localStorage value.
     let val = wasm.getItem(key)
     if val.isNone: return none(JsonNode)
     try:
@@ -100,11 +103,17 @@ proc readConfigJson*(app, dep, filename: string): Option[JsonNode]
 # ── Binary helpers ────────────────────────────────────────────────────────────
 
 proc writeConfigBytes*(app, dep, filename: string; data: string; compress = false)
-    {.raises: [ConfigPathError, ConfigUnsupportedError, ConfigIOError].} =
+    {.raises: [ConfigPathError, ConfigUnsupportedError, ConfigIOError, ConfigParseError].} =
   ## Write raw bytes with magic byte prefix.
+  ## Empty data raises ConfigParseError — use deleteConfig to remove a file.
   ## Raises ConfigUnsupportedError if not isWritable().
+  ## On WASM v1: delegates to wasm.setItem which raises ConfigUnsupportedError.
+  if data.len == 0:
+    raise newException(ConfigParseError,
+      "writeConfigBytes: empty payload not supported — use deleteConfig to remove a file")
   when defined(emscripten):
     let key = configFile(app, dep, filename)
+    # TODO(wasm-v2): use setItemBase64 and add magic-byte framing.
     wasm.setItem(key, data)
   else:
     if not isWritable():
@@ -116,8 +125,10 @@ proc writeConfigBytes*(app, dep, filename: string; data: string; compress = fals
 proc readConfigBytes*(app, dep, filename: string): Option[string]
     {.raises: [ConfigPathError, ConfigParseError, ConfigIOError].} =
   ## none() if absent. Checks magic, decompresses, returns raw bytes.
+  ## On WASM v1: delegates to wasm.getItem which returns none().
   when defined(emscripten):
     let key = configFile(app, dep, filename)
+    # TODO(wasm-v2): use getItemBase64 and strip magic-byte framing.
     return wasm.getItem(key)
   else:
     let path = configFile(app, dep, filename)
@@ -137,6 +148,10 @@ proc writeConfig*[T](app, dep, filename: string; data: T;
 proc readConfig*[T](app, dep, filename: string): Option[T]
     {.raises: [ConfigPathError, ConfigParseError, ConfigIOError].} =
   ## readConfigJson -> .to(T). none() if absent. ConfigParseError if to(T) fails.
+  when not compiles(block:
+    var j: JsonNode
+    j.to(T)):
+    {.error: "configy.readConfig: T has no `to(T)` conversion — import its JSON module".}
   let j = readConfigJson(app, dep, filename)
   if j.isNone: return none(T)
   try:
@@ -152,6 +167,7 @@ proc deleteConfig*(app, dep, filename: string): bool
   ## Delete the file. true if removed, false if absent.
   ## Raises ConfigUnsupportedError on a read-only target.
   when defined(emscripten):
+    # TODO(wasm-v2): implement removeItem via localStorage JS interop.
     raise newException(ConfigUnsupportedError,
       "deleteConfig: localStorage delete not supported in WASM v1")
   else:
