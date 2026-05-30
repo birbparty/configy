@@ -3,6 +3,10 @@ import supersnappy
 import configy/errors
 import configy/paths
 import configy/fs
+# Re-export the types consumers need to use the return values of this module's procs.
+# Without these, `import configy` consumers cannot call .isSome/.get on Option results
+# or use %* / JsonNode for writeConfigJson arguments.
+export options, json
 when defined(emscripten):
   import configy/wasm
 
