@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Desktop tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: '2.2.0'
+
+      - name: Install dependencies
+        run: nimble install -d -y
+
+      - name: Run tests
+        run: nimble test
+
+  cross-compile:
+    name: Cross-compile smoke (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: ds3
+            define: ds3
+          - target: psp
+            define: psp
+          - target: vita
+            define: vita
+          - target: wasm
+            define: emscripten
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: '2.2.0'
+
+      - name: Install dependencies
+        run: nimble install -d -y
+
+      - name: Cross-compile smoke check
+        run: |
+          nim c --compileOnly \
+            -d:configyVendor=testvendor \
+            -d:${{ matrix.define }} \
+            --path:src \
+            src/configy.nim
