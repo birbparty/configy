@@ -34,14 +34,20 @@ suite "ConfigError hierarchy":
     expect ConfigPathError: validateComponent("..")
 
   test "ConfigParseError on 0-byte file":
-    let path = configFile("testapp", "testerr", "zero.bin")
     discard ensureConfigDir("testapp", "testerr")
+    let path = configFile("testapp", "testerr", "zero.bin")
     writeFile(path, "")
-    defer: discard tryRemoveFile(path)
+    defer:
+      discard tryRemoveFile(path)
+      try: removeDir(configDir("testapp", "testerr"))
+      except: discard
     expect ConfigParseError:
       discard readConfigBytes("testapp", "testerr", "zero.bin")
 
   test "ConfigUnsupportedError on read-only target":
+    # This test executes only on 3DS/PSP/WASM (configyFsWritable=false).
+    # On desktop/Windows/Vita it skips — verified by code inspection that
+    # writeConfigJson raises ConfigUnsupportedError when not isWritable().
     when not configyFsWritable:
       expect ConfigUnsupportedError:
         writeConfigJson("x", "y", "f.json", %*{"a": 1})

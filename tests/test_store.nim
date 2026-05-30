@@ -4,9 +4,15 @@ import configy
 const TestApp = "testapp"
 const TestDep = "teststore"
 
+proc cleanTestDir() =
+  try: removeDir(configDir(TestApp, TestDep))
+  except: discard
+
 suite "JSON round-trip":
   setup:
     discard ensureConfigDir(TestApp, TestDep)
+  teardown:
+    cleanTestDir()
 
   test "raw JSON write and read":
     let data = %*{"key": "value", "num": 42}
@@ -37,6 +43,8 @@ suite "JSON round-trip":
 suite "Binary round-trip":
   setup:
     discard ensureConfigDir(TestApp, TestDep)
+  teardown:
+    cleanTestDir()
 
   test "raw bytes write and read":
     let data = "hello binary world"
@@ -75,6 +83,8 @@ suite "Typed generic round-trip":
 
   setup:
     discard ensureConfigDir(TestApp, TestDep)
+  teardown:
+    cleanTestDir()
 
   test "writeConfig and readConfig round-trip":
     let s = Settings(volume: 0.8, fullscreen: true)
@@ -103,39 +113,36 @@ suite "Typed generic round-trip":
 suite "Error cases":
   setup:
     discard ensureConfigDir(TestApp, TestDep)
+  teardown:
+    cleanTestDir()
 
   test "0-byte file raises ConfigParseError":
     let path = configFile(TestApp, TestDep, "zero.bin")
     writeFile(path, "")
-    defer: discard tryRemoveFile(path)
     expect ConfigParseError:
       discard readConfigBytes(TestApp, TestDep, "zero.bin")
 
   test "1-byte raw file (magic only) raises ConfigParseError":
     let path = configFile(TestApp, TestDep, "magic_only.bin")
     writeFile(path, "\x00")
-    defer: discard tryRemoveFile(path)
     expect ConfigParseError:
       discard readConfigBytes(TestApp, TestDep, "magic_only.bin")
 
   test "1-byte Snappy file (magic only) raises ConfigParseError":
     let path = configFile(TestApp, TestDep, "snappy_only.bin")
     writeFile(path, "\x01")
-    defer: discard tryRemoveFile(path)
     expect ConfigParseError:
       discard readConfigBytes(TestApp, TestDep, "snappy_only.bin")
 
   test "unknown magic byte raises ConfigParseError":
     let path = configFile(TestApp, TestDep, "bad_magic.bin")
     writeFile(path, "\xFF" & "some data")
-    defer: discard tryRemoveFile(path)
     expect ConfigParseError:
       discard readConfigBytes(TestApp, TestDep, "bad_magic.bin")
 
   test "corrupt Snappy payload raises ConfigParseError":
     let path = configFile(TestApp, TestDep, "corrupt_snappy.bin")
     writeFile(path, "\x01" & "not valid snappy data at all !@#$")
-    defer: discard tryRemoveFile(path)
     expect ConfigParseError:
       discard readConfigBytes(TestApp, TestDep, "corrupt_snappy.bin")
 
@@ -147,6 +154,8 @@ suite "Error cases":
 suite "File management":
   setup:
     discard ensureConfigDir(TestApp, TestDep)
+  teardown:
+    cleanTestDir()
 
   test "configFileExists returns false for missing file":
     check not configFileExists(TestApp, TestDep, "doesnotexist.json")
