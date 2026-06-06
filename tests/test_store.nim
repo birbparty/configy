@@ -151,6 +151,47 @@ suite "Error cases":
     expect ConfigParseError:
       discard readConfigJson(TestApp, TestDep, "bytes_as_json.bin")
 
+suite "Dep-less round-trip":
+  const TestAppNoDep = "testapp-nodep"
+
+  proc cleanNodepDir() =
+    try: removeDir(configDir(TestAppNoDep))
+    except: discard
+
+  setup:
+    discard ensureConfigDir(TestAppNoDep)
+  teardown:
+    cleanNodepDir()
+
+  test "writeConfigJson / readConfigJson round-trip without dep":
+    let data = %*{"key": "value"}
+    writeConfigJson(TestAppNoDep, "nodep.json", data)
+    let got = readConfigJson(TestAppNoDep, "nodep.json")
+    check got.isSome
+    check got.get == data
+    discard deleteConfig(TestAppNoDep, "nodep.json")
+
+  test "writeConfigBytes / readConfigBytes round-trip without dep":
+    let data = "no dep bytes"
+    writeConfigBytes(TestAppNoDep, "nodep.bin", data)
+    let got = readConfigBytes(TestAppNoDep, "nodep.bin")
+    check got.isSome
+    check got.get == data
+
+  test "configFileExists without dep":
+    check not configFileExists(TestAppNoDep, "ghost.json")
+    writeConfigJson(TestAppNoDep, "present.json", %*{"x": 1})
+    check configFileExists(TestAppNoDep, "present.json")
+
+  test "deleteConfig without dep returns false for missing":
+    check not deleteConfig(TestAppNoDep, "missing.json")
+
+  test "on-disk path for dep-less has no dep segment":
+    writeConfigJson(TestAppNoDep, "check.json", %*{"ok": true})
+    let path = configFile(TestAppNoDep, "check.json")
+    check strutils.contains(path, TestAppNoDep)
+    check path.endsWith("check.json")
+
 suite "File management":
   setup:
     discard ensureConfigDir(TestApp, TestDep)
