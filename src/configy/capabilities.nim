@@ -9,7 +9,11 @@ const
   configyHasSnappy* = true
     ## supersnappy is a required pure-Nim dependency; always available on all targets.
 
-# Conservative: 3DS and PSP default false until the SDK FS is verified.
+# 3DS: read path verified on devkitARM (os:linux+newlib+libctru) as of 2026-06-06
+#   — compiles, links, and reads sdmc:/ correctly in Azahar (see verify/ds3/ and
+#   scripts/build_3ds.sh). configyFsWritable stays false: writes are not yet
+#   verified/enabled on 3DS (would be a future change; sdmc:/ is writable).
+# PSP: default false until the SDK FS is verified (unverified on a real toolchain).
 # WASM is false for v1 (localStorage writes not implemented).
 const configyFsWritable* =
   when defined(emscripten):             false
