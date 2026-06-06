@@ -49,8 +49,9 @@ Example: `~/.config/acme-mytool/cache/settings.json`
 Pros: Single directory at the XDG root, matching the "one directory per program" letter of
 the spec. Familiar pattern for CLI tools.
 
-Cons: `<vendor>` and `<app>` become visually ambiguous at a glance; `VendorNamespace`
-validation currently bans `-` in some contexts (check `validateComponent`).
+Cons: `<vendor>` and `<app>` become visually ambiguous at a glance. (`validateComponent`
+does NOT ban hyphens — `"my-app"` is explicitly allowed — so this is purely a readability
+concern, not a validation constraint.)
 
 **This plan assumes Option A.** Change the per-platform table below if Option B is chosen;
 no other sections need to change.
@@ -85,11 +86,21 @@ When provided, the directory is `configRoot() + <app> + sep + <dep> + sep`.
 | Vita | `ux0:data/config/acme/mytool/cache/` | `ux0:data/config/acme/mytool/` |
 | WASM | `config/acme/mytool/cache/` | `config/acme/mytool/` |
 
-**API note:** Nim does not support true optional positional args; use a default value
-(e.g., `dep = ""`). When `dep` is empty, skip the dep segment. `validateComponent`
-must be updated to permit empty only when called in optional context — or call it
-conditionally. Implementation choice: add an `allowEmpty = false` parameter to
-`validateComponent`, or check before calling.
+**API note:** Use two distinct overloads for everything that takes `dep` — not a
+single proc with a default `""` for a middle positional parameter. Nim compiles
+`proc f(app: string, dep = "", filename: string)` but a positional two-arg call
+`f("app", "file.json")` does NOT work: the second arg binds to `dep`, leaving
+`filename` unfilled. Forcing callers to write `configFile("app", filename = "f")`
+is poor ergonomics. Two overloads dispatch correctly and stay positional:
+
+```nim
+proc configDir*(app: string): string               # dep-less
+proc configDir*(app, dep: string): string          # full
+proc configFile*(app, filename: string): string    # dep-less
+proc configFile*(app, dep, filename: string): string  # full
+```
+
+This pattern cascades to `fs.nim` and all ~9 public procs in `store.nim`.
 
 ### configFile variants
 
@@ -155,20 +166,21 @@ What to do instead:
 
 | File | What changes |
 |------|-------------|
-| `src/configy/paths.nim` | `configRoot()` rewritten; one desktop branch instead of three; console path segment order changes |
-| `src/configy/capabilities.nim` | Windows branch in `configyUsesOsPath` simplification (optional cleanup); `VendorNamespace` validation may need to allow `-` if Option B chosen |
-| `tests/test_paths.nim` | Tests asserting `"." & VendorNamespace` in root path must change; `%APPDATA%` / Windows branch tests change; new XDG env-var override test needed |
-| `README.md` | Path examples, table of per-platform locations, Windows note |
+| `src/configy/paths.nim` | `configRoot()` rewritten; one desktop branch; `getHomeDir()` guard; dep-less overloads for `configDir`/`configFile`; console path segment order changes |
+| `src/configy/fs.nim` | Dep-less overloads: `ensureConfigDir(app)`, `ensureConfigFile(app, filename)` |
+| `src/configy/store.nim` | Dep-less overloads for all 9 public procs (see Phase 1b) |
+| `src/configy/capabilities.nim` | Minor doc cleanup only (optional; `configyUsesOsPath` unchanged) |
+| `tests/test_paths.nim` | Hidden-dot assertions replaced; XDG env-var tests with save/restore; dep-less overload tests |
+| `tests/test_store.nim` | Dep-less round-trip tests (write then read without dep) |
+| `README.md` | Path examples, per-platform table, Windows note, dep-less usage examples |
 
 ### Files that do NOT change
 
 | File | Why safe |
 |------|----------|
 | `src/configy/errors.nim` | Error types unchanged |
-| `src/configy/fs.nim` | Calls `configDir()` — update signatures to accept optional dep |
-| `src/configy/store.nim` | Calls `fs.nim` — update signatures to accept optional dep |
-| `src/configy/wasm.nim` | Stub; update localStorage key prefix only |
-| `configy.nimble` | Bump version number only |
+| `src/configy/wasm.nim` | Stub; localStorage key prefix update only (documentation-level) |
+| `configy.nimble` | Version bump only |
 
 ### Public API changes
 
@@ -207,59 +219,117 @@ proc configRoot*(): string {.raises: [ConfigPathError].} =
     if xdgConfigHome.len > 0 and isAbsolute(xdgConfigHome):
       result = xdgConfigHome / VendorNamespace & $DirSep
     else:
-      result = getHomeDir() / ".config" / VendorNamespace & $DirSep
+      let home = getHomeDir()
+      if home.len == 0:
+        raise newException(ConfigPathError,
+          "home directory is not set (HOME / USERPROFILE unset)")
+      result = home / ".config" / VendorNamespace & $DirSep
 ```
 
-Update the docstring in `configRoot()` to reflect new values.
+**Note on `{.raises: [ConfigPathError].}`:** The old Windows branch raised on missing
+`APPDATA`; the new implementation only raises on empty `getHomeDir()`. Keep the
+annotation for API stability — downstream `{.raises.}` chains in `fs.nim`/`store.nim`
+already expect it — but document the guard explicitly in the new docstring.
 
-**Task 1.2: Make `dep` optional in `configDir()` and `configFile()`**
+Update `configRoot()`'s docstring to reflect the new per-platform values:
+```
+##   Desktop (Linux/macOS/Windows): $XDG_CONFIG_HOME/<vendor>/  (fallback: ~/.config/<vendor>/)
+##   3DS:  sdmc:/config/<vendor>/
+##   PSP:  ms0:/PSP/config/<vendor>/
+##   Vita: ux0:data/config/<vendor>/
+##   WASM: config/<vendor>/  (localStorage key prefix)
+```
 
-Add optional-dep overloads. Nim's approach: use a default value of `""` and skip the
-dep segment when empty. `validateComponent` must not be called when dep is empty:
+**Task 1.2: Add dep-less overloads for `configDir()` and `configFile()`**
+
+Use two explicit overloads — not a default `dep = ""`. The dep-less `configDir` has `dep`
+as a trailing parameter so the default-value approach *would* work there, but for consistency
+with `configFile` (where dep is middle-position and the default fails positionally) use
+overloads throughout:
 
 ```nim
-proc configDir*(app: string, dep = ""): string {.raises: [ConfigPathError].} =
+proc configDir*(app: string): string {.raises: [ConfigPathError].} =
+  ## Dep-less form: returns config directory for app only.
   validateComponent(app)
-  let root = configRoot()
-  if dep.len == 0:
-    when configyUsesOsPath:
-      result = root & app & $DirSep
-    else:
-      result = root & app & "/"
+  when configyUsesOsPath:
+    result = configRoot() & app & $DirSep
   else:
-    validateComponent(dep)
-    when configyUsesOsPath:
-      result = root & app & $DirSep & dep & $DirSep
-    else:
-      result = root & app & "/" & dep & "/"
+    result = configRoot() & app & "/"
 
-proc configFile*(app: string, dep = "", filename: string): string {.raises: [ConfigPathError].} =
+proc configDir*(app, dep: string): string {.raises: [ConfigPathError].} =
+  ## Full form: preserves existing (app, dep) signature unchanged.
+  validateComponent(app)
+  validateComponent(dep)
+  when configyUsesOsPath:
+    result = configRoot() & app & $DirSep & dep & $DirSep
+  else:
+    result = configRoot() & app & "/" & dep & "/"
+
+proc configFile*(app, filename: string): string {.raises: [ConfigPathError].} =
+  ## Dep-less form: file lives directly under app directory.
+  validateComponent(filename)
+  result = configDir(app) & filename
+
+proc configFile*(app, dep, filename: string): string {.raises: [ConfigPathError].} =
+  ## Full form: preserves existing (app, dep, filename) signature unchanged.
   validateComponent(filename)
   result = configDir(app, dep) & filename
 ```
 
-Note: Nim requires named-argument call or positional ordering for optional middle
-parameters. Verify with a two-argument call `configFile("app", filename = "f.json")`
-compiles cleanly — if not, split into two distinct procs instead:
+`configFile("myapp", "config.toml")` dispatches to the dep-less overload positionally —
+no named arguments required. `configFile("myapp", "cache", "state.bin")` dispatches to
+the full overload. Existing callers are unaffected.
 
+**Cascade to `fs.nim` and `store.nim`:** Every public proc that currently takes `(app, dep, ...)`
+needs a dep-less overload. See Phase 1b below.
+
+### Phase 1b — Dep-less overloads for `fs.nim` and `store.nim`
+
+The dep-less feature is unusable end-to-end unless the store procs also accept it.
+Every proc that currently takes `(app, dep, ...)` needs a dep-less twin. Full list:
+
+**`fs.nim`** (1 proc — `dep` is trailing, straightforward):
+- `ensureConfigDir(app, dep)` → add `ensureConfigDir(app)`
+- `ensureConfigFile(app, dep, filename)` → add `ensureConfigFile(app, filename)`
+
+**`store.nim`** (9 procs — `dep` is middle, all need overloads):
+- `configFileExists(app, dep, filename)` → add `configFileExists(app, filename)`
+- `deleteConfig(app, dep, filename)` → add `deleteConfig(app, filename)`
+- `writeConfigBytes(app, dep, filename, data, compress)` → add dep-less form
+- `readConfigBytes(app, dep, filename)` → add dep-less form
+- `writeConfigJson(app, dep, filename, data, compress, pretty)` → add dep-less form
+- `readConfigJson(app, dep, filename)` → add dep-less form
+- `writeConfig[T](app, dep, filename, data, compress, pretty)` → add dep-less form
+- `readConfig[T](app, dep, filename)` → add dep-less form
+- `ensureConfigFile` (if duplicated in store) → add dep-less form
+
+Each dep-less overload simply delegates:
 ```nim
-proc configFile*(app, filename: string): string  # dep-less overload
-proc configFile*(app, dep, filename: string): string  # full overload
+proc writeConfigJson*(app, filename: string; data: JsonNode;
+                      compress = false; pretty = false) =
+  writeConfigJson(app, "", filename, data, compress, pretty)
 ```
+Wait — this won't work if the full overload also takes `(app, dep, filename, ...)` because
+`""` would dispatch back. Instead delegate to `configFile(app, filename)` directly rather
+than calling the dep form with an empty dep.
 
-Two separate procs avoids named-argument ambiguity and is easier to document.
+Concretely: dep-less `store.nim` overloads call `configFile(app, filename)` (the dep-less
+path overload) for the file path, then proceed with the same body. Extract the path
+resolution step so the body isn't duplicated.
 
 ### Phase 2 — Update `capabilities.nim`
 
-**Task 2.1: Remove the Windows-specific `%APPDATA%` path from consideration**
+**Task 2.1: Verify `configyUsesOsPath` needs no change**
 
-`configyUsesOsPath` currently excludes only console/WASM targets; Windows is included
-(uses `std/os`). This remains correct for the new scheme — no change needed.
+`configyUsesOsPath` excludes console/WASM targets; Windows remains included (uses
+`std/os`). This is still correct for the new scheme — no change needed.
 
-**Task 2.2 (optional): Remove the now-dead Windows-only `%APPDATA%` fallback check**
+**Task 2.2 (optional): Remove the now-dead VendorNamespace capability note**
 
-Since the Windows branch is removed from `configRoot()`, the `%APPDATA%` documentation
-in `capabilities.nim` can be cleaned up if it references the old scheme.
+`capabilities.nim` has no `%APPDATA%` reference — that lived entirely in the Windows
+branch of `configRoot()` (paths.nim:43-46), which Task 1.1 removes. Check whether the
+`VendorNamespace` docstring (capabilities.nim:27) needs updating to remove any
+mention of `%APPDATA%`. If not present, Task 2.2 is a no-op.
 
 ### Phase 3 — Update tests in `test_paths.nim`
 
@@ -335,10 +405,34 @@ test "configDir without dep returns two-level path":
   check not strutils.contains(dir, "mylib")  # no dep segment
 
 test "configFile without dep includes filename directly under app":
-  let path = configFile("myapp", "settings.json")
+  let path = configFile("myapp", "settings.json")   # positional, no named arg needed
   check path.endsWith("settings.json")
   check not strutils.contains(path, "/mylib/")  # no dep segment in path
+
+test "configFile dep-less and full differ only in dep segment":
+  let short = configFile("myapp", "config.toml")
+  let full   = configFile("myapp", "cache", "config.toml")
+  check full.len > short.len
+  check strutils.contains(full, "cache")
+  check not strutils.contains(short, "cache")
 ```
+
+**Task 3.6: Add dep-less round-trip test in `test_store.nim`**
+
+```nim
+test "writeConfigJson / readConfigJson round-trip without dep":
+  let app = "testapp-nodep"
+  let filename = "nodep.json"
+  let data = %* {"key": "value"}
+  writeConfigJson(app, filename, data)
+  let got = readConfigJson(app, filename)
+  check got.isSome
+  check got.get == data
+  discard deleteConfig(app, filename)  # dep-less delete
+```
+
+This verifies the end-to-end dep-less path compiles, resolves, and round-trips through
+the actual filesystem — not just the path string.
 
 ### Phase 4 — Update `wasm.nim`
 
@@ -400,10 +494,18 @@ description noting XDG compliance.
       the device prefix, not `<vendor>/config/`
 - [ ] All existing `test_paths.nim` tests pass after updates
 - [ ] New XDG env-var override tests (3 cases) pass, with save/restore hygiene
+- [ ] `configRoot()` raises `ConfigPathError` when `HOME`/`USERPROFILE` is unset and
+      `XDG_CONFIG_HOME` is not usable (guards against silent `/.config/` path)
 - [ ] `configDir("myapp")` returns `~/.config/<vendor>/myapp/` (no dep segment)
-- [ ] `configFile("myapp", filename = "config.toml")` returns
+- [ ] `configFile("myapp", "config.toml")` — positional, no named arg — returns
       `~/.config/<vendor>/myapp/config.toml`
 - [ ] `configDir("myapp", "mylib")` still works (no regression)
-- [ ] `fs.nim` and `store.nim` public procs accept optional dep
+- [ ] `configFile("myapp", "cache", "state.bin")` still works (no regression)
+- [ ] `writeConfigJson(app, filename, data)` / `readConfigJson(app, filename)` round-trips
+      and the on-disk path contains no dep segment
+- [ ] All dep-less store procs (`writeConfigJson`, `readConfigJson`, `writeConfig[T]`,
+      `readConfig[T]`, `deleteConfig`, `configFileExists`, etc.) compile and function
+- [ ] Console paths (`sdmc:/`, `ms0:/PSP/`, `ux0:data/`) start with `config/<vendor>/` after
+      the device prefix (verified by cross-compile `nim check` in CI)
 - [ ] `nim check` succeeds on all supported platforms (or cross-compile checks in CI)
 - [ ] README path examples match the new scheme, including dep-less examples
