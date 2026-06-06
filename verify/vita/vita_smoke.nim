@@ -30,7 +30,9 @@ proc sceIoWrite(fd: SceUID, data: pointer, size: csize_t): cint
 proc sceIoClose(fd: SceUID): cint {.importc, header: "psp2/io/fcntl.h".}
 
 const
-  SCE_O_WRONLY = 0x0001
+  # Values from VitaSDK psp2common/kernel/iofilemgr.h (enum SceIoMode).
+  # NOTE: 0x0001 is SCE_O_RDONLY — WRONLY is 0x0002.
+  SCE_O_WRONLY = 0x0002
   SCE_O_CREAT  = 0x0200
   SCE_O_TRUNC  = 0x0400
 
