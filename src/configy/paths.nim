@@ -56,6 +56,9 @@ proc configRoot*(): string {.raises: [ConfigPathError].} =
 proc configDir*(app: string): string {.raises: [ConfigPathError].} =
   ## Dep-less form: returns the config directory for app only, without creating it.
   ## Trailing separator is included.
+  ## NOTE: configDir(app, x) treats x as a *dep* (directory), while
+  ## configFile(app, x) treats x as a *filename*. A two-arg call to each function
+  ## has the same types but different meanings for the second argument.
   validateComponent(app)
   when configyUsesOsPath:
     result = configRoot() & app & $DirSep
@@ -77,6 +80,9 @@ proc configDir*(app, dep: string): string {.raises: [ConfigPathError].} =
 proc configFile*(app, filename: string): string {.raises: [ConfigPathError].} =
   ## Dep-less form: file lives directly under the app directory.
   ## Raises ConfigPathError on invalid app or filename.
+  ## NOTE: the second positional arg is the *filename*, not a dep. A v0.1.x call
+  ## configFile("app", "dep", "file.json") that loses the dep arg silently compiles
+  ## to configFile("app", "dep") → a *file* at .../app/dep rather than an error.
   validateComponent(filename)
   result = configDir(app) & filename
 

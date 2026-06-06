@@ -11,8 +11,11 @@ proc isWritable*(): bool {.raises: [].} =
   configyFsWritable
 
 proc ensureConfigDir*(app: string): string {.raises: [ConfigPathError, ConfigIOError].} =
-  ## Dep-less form: resolve configDir(app) and create the directory if missing.
+  ## Dep-less form: resolve configDir(app) and create the directory (and parents) if missing.
   ## Returns the directory path.
+  ## ConfigPathError is raised on invalid app on ALL targets (before any FS access).
+  ## On read-only targets (3DS, PSP, WASM), directory creation is skipped.
+  ## ConfigIOError is raised only when creation is attempted and fails.
   result = configDir(app)
   when configyFsWritable:
     try:

@@ -30,11 +30,25 @@ on all desktop targets. `dep` is optional — omit it to put files directly unde
 - `<app>` — the consuming application name, supplied at call time.
 - `<dep>` — the library or feature name (optional), supplied at call time.
 
+> **Overload note:** `configDir(app, x)` treats `x` as a **dep** (a sub-directory).
+> `configFile(app, x)` treats `x` as a **filename** (the file itself). Both accept
+> `(string, string)` but the second argument means different things. A three-arg call
+> that accidentally loses an argument compiles silently to a different path — make sure
+> you intend the dep-less form when using two positional arguments.
+>
+> **Name collision:** do not use the same name as both a dep-less filename and a dep
+> (e.g. `configFile(app, "x")` and `configDir(app, "x")` under the same app). A
+> filesystem cannot hold both a file and a directory named `x` — `ensureConfigDir`
+> will raise `ConfigIOError` at runtime if you try.
+
 ### XDG env-var override (desktop)
 
 On all desktop targets (Linux, macOS, Windows), `$XDG_CONFIG_HOME` is respected when it
 is set, non-empty, and an **absolute path**. If any of those conditions fails, configy
-falls back to `~/.config/`. This matches the XDG Base Directory Specification exactly.
+falls back to `~/.config/`. This env-var resolution rule follows the XDG Base Directory
+Specification. Note that configy nests files under `<vendor>/<app>/` (and optionally
+`<dep>/`) within the XDG config root rather than the spec's conventional flat
+`$XDG_CONFIG_HOME/<app>/` layout — the extra namespacing prevents vendor collisions.
 
 ### Windows note
 
@@ -62,6 +76,7 @@ configy has no built-in default. The build fails with a clear error if
 
 ```nim
 # Compile with: nim c -d:configyVendor=myorg myapp.nim
+# (myorg is <vendor> from the path tables above — set at compile time)
 import configy
 import std/options
 

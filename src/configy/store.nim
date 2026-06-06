@@ -216,6 +216,9 @@ proc writeConfig*[T](app, filename: string; data: T;
                      pretty = false; compress = false)
     {.raises: [ConfigPathError, ConfigUnsupportedError, ConfigIOError].} =
   ## Dep-less form: %data -> writeConfigJson.
+  ## NOTE: writeConfig("app", "x", "y") binds here when "y" is a string, with
+  ## T=string ("x"=filename, "y"=data). For dep+filename, use the 3-string
+  ## writeConfigJson overload or pass a non-string data type.
   when not compiles(%data):
     {.error: "configy.writeConfig: T has no `%` proc — import its JSON module".}
   writeConfigJson(app, filename, %data, pretty = pretty, compress = compress)

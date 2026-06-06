@@ -37,12 +37,15 @@ suite "configRoot and configDir (desktop, non-Windows)":
        not defined(vita) and not defined(emscripten):
 
     proc withXdgConfigHome(value: string, body: proc()) =
-      let saved = getEnv("XDG_CONFIG_HOME")
+      # Snapshot both the value and whether the var was set at all, so a
+      # set-but-empty XDG_CONFIG_HOME in the environment is restored exactly.
+      let savedValue = getEnv("XDG_CONFIG_HOME")
+      let wasSet = existsEnv("XDG_CONFIG_HOME")
       if value.len > 0: putEnv("XDG_CONFIG_HOME", value)
       else: delEnv("XDG_CONFIG_HOME")
       try: body()
       finally:
-        if saved.len > 0: putEnv("XDG_CONFIG_HOME", saved)
+        if wasSet: putEnv("XDG_CONFIG_HOME", savedValue)
         else: delEnv("XDG_CONFIG_HOME")
 
     test "configRoot ends with trailing separator":
@@ -122,3 +125,49 @@ suite "configRoot and configDir (desktop, non-Windows)":
         check full.len > short.len
         check strutils.contains(full, "cache")
         check not strutils.contains(short, "cache")
+
+    test "configRoot collapses trailing slash in XDG_CONFIG_HOME":
+      withXdgConfigHome("/tmp/xdg-test/"):
+        let root = configRoot()
+        check not strutils.contains(root, "//")
+        check root.startsWith("/tmp/xdg-test/")
+
+when defined(emscripten):
+  suite "configRoot — WASM (emscripten)":
+    test "WASM root is config/<vendor>/":
+      check configRoot() == "config/" & VendorNamespace & "/"
+    test "WASM dep-less configDir":
+      check configDir("myapp") == "config/" & VendorNamespace & "/myapp/"
+    test "WASM full configDir":
+      check configDir("myapp", "mylib") == "config/" & VendorNamespace & "/myapp/mylib/"
+    test "WASM dep-less configFile":
+      check configFile("myapp", "s.json") == "config/" & VendorNamespace & "/myapp/s.json"
+    test "WASM full configFile":
+      check configFile("myapp", "mylib", "s.json") == "config/" & VendorNamespace & "/myapp/mylib/s.json"
+
+when defined(vita):
+  suite "configRoot — PS Vita":
+    test "Vita root is ux0:data/config/<vendor>/":
+      check configRoot() == "ux0:data/config/" & VendorNamespace & "/"
+    test "Vita dep-less configDir":
+      check configDir("myapp") == "ux0:data/config/" & VendorNamespace & "/myapp/"
+    test "Vita dep-less configFile":
+      check configFile("myapp", "s.json") == "ux0:data/config/" & VendorNamespace & "/myapp/s.json"
+
+when defined(psp):
+  suite "configRoot — PSP":
+    test "PSP root is ms0:/PSP/config/<vendor>/":
+      check configRoot() == "ms0:/PSP/config/" & VendorNamespace & "/"
+    test "PSP dep-less configDir":
+      check configDir("myapp") == "ms0:/PSP/config/" & VendorNamespace & "/myapp/"
+    test "PSP dep-less configFile":
+      check configFile("myapp", "s.json") == "ms0:/PSP/config/" & VendorNamespace & "/myapp/s.json"
+
+when defined(ds3):
+  suite "configRoot — Nintendo 3DS":
+    test "3DS root is sdmc:/config/<vendor>/":
+      check configRoot() == "sdmc:/config/" & VendorNamespace & "/"
+    test "3DS dep-less configDir":
+      check configDir("myapp") == "sdmc:/config/" & VendorNamespace & "/myapp/"
+    test "3DS dep-less configFile":
+      check configFile("myapp", "s.json") == "sdmc:/config/" & VendorNamespace & "/myapp/s.json"
