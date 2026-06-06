@@ -55,18 +55,41 @@ proc notFound(path: string): bool =
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+proc ensureConfigFile*(app, filename: string): string
+    {.raises: [ConfigPathError, ConfigIOError].} =
+  ## Dep-less form: ensureConfigDir(app) + filename. Returns a writable file path.
+  validateComponent(filename)
+  result = ensureConfigDir(app) & filename
+
 proc ensureConfigFile*(app, dep, filename: string): string
     {.raises: [ConfigPathError, ConfigIOError].} =
-  ## ensureConfigDir(app, dep) + join filename. Returns a writable file path.
+  ## Full form: ensureConfigDir(app, dep) + filename. Returns a writable file path.
   validateComponent(filename)
   result = ensureConfigDir(app, dep) & filename
 
 # ── JSON helpers ──────────────────────────────────────────────────────────────
 
+proc writeConfigJson*(app, filename: string; data: JsonNode;
+                      pretty = false; compress = false)
+    {.raises: [ConfigPathError, ConfigUnsupportedError, ConfigIOError].} =
+  ## Dep-less form: serialize data → compress → magic byte → write.
+  ## Raises ConfigUnsupportedError if not isWritable().
+  when defined(emscripten):
+    let key = configFile(app, filename)
+    let serialized = if pretty: json.pretty(data) else: $data
+    wasm.setItem(key, serialized)
+  else:
+    if not isWritable():
+      raise newException(ConfigUnsupportedError,
+        "writeConfigJson: target is read-only")
+    let path = ensureConfigFile(app, filename)
+    let serialized = if pretty: json.pretty(data) else: $data
+    storeBytes(path, serialized, compress)
+
 proc writeConfigJson*(app, dep, filename: string; data: JsonNode;
                       pretty = false; compress = false)
     {.raises: [ConfigPathError, ConfigUnsupportedError, ConfigIOError].} =
-  ## Serialize data → compress → magic byte → write.
+  ## Full form: serialize data → compress → magic byte → write.
   ## Raises ConfigUnsupportedError if not isWritable().
   ## On WASM v1: delegates to wasm.setItem which raises ConfigUnsupportedError.
   when defined(emscripten):
@@ -82,9 +105,29 @@ proc writeConfigJson*(app, dep, filename: string; data: JsonNode;
     let serialized = if pretty: json.pretty(data) else: $data
     storeBytes(path, serialized, compress)
 
+proc readConfigJson*(app, filename: string): Option[JsonNode]
+    {.raises: [ConfigPathError, ConfigParseError, ConfigIOError].} =
+  ## Dep-less form: none() if file absent. Checks magic, decompresses, parses JSON.
+  when defined(emscripten):
+    let key = configFile(app, filename)
+    let val = wasm.getItem(key)
+    if val.isNone: return none(JsonNode)
+    try:
+      return some(parseJson(val.get))
+    except CatchableError as e:
+      raise newException(ConfigParseError, "JSON parse error: " & e.msg)
+  else:
+    let path = configFile(app, filename)
+    if notFound(path): return none(JsonNode)
+    let payload = loadBytes(path)
+    try:
+      return some(parseJson(payload))
+    except CatchableError as e:
+      raise newException(ConfigParseError, "JSON parse error in " & path & ": " & e.msg)
+
 proc readConfigJson*(app, dep, filename: string): Option[JsonNode]
     {.raises: [ConfigPathError, ConfigParseError, ConfigIOError].} =
-  ## none() if file absent. Checks magic, decompresses, parses JSON.
+  ## Full form: none() if file absent. Checks magic, decompresses, parses JSON.
   ## On WASM v1: delegates to wasm.getItem which returns none().
   when defined(emscripten):
     let key = configFile(app, dep, filename)
@@ -106,9 +149,26 @@ proc readConfigJson*(app, dep, filename: string): Option[JsonNode]
 
 # ── Binary helpers ────────────────────────────────────────────────────────────
 
+proc writeConfigBytes*(app, filename: string; data: string; compress = false)
+    {.raises: [ConfigPathError, ConfigUnsupportedError, ConfigIOError, ConfigParseError].} =
+  ## Dep-less form: write raw bytes with magic byte prefix.
+  ## Empty data raises ConfigParseError — use deleteConfig to remove a file.
+  if data.len == 0:
+    raise newException(ConfigParseError,
+      "writeConfigBytes: empty payload not supported — use deleteConfig to remove a file")
+  when defined(emscripten):
+    let key = configFile(app, filename)
+    wasm.setItem(key, data)
+  else:
+    if not isWritable():
+      raise newException(ConfigUnsupportedError,
+        "writeConfigBytes: target is read-only")
+    let path = ensureConfigFile(app, filename)
+    storeBytes(path, data, compress)
+
 proc writeConfigBytes*(app, dep, filename: string; data: string; compress = false)
     {.raises: [ConfigPathError, ConfigUnsupportedError, ConfigIOError, ConfigParseError].} =
-  ## Write raw bytes with magic byte prefix.
+  ## Full form: write raw bytes with magic byte prefix.
   ## Empty data raises ConfigParseError — use deleteConfig to remove a file.
   ## Raises ConfigUnsupportedError if not isWritable().
   ## On WASM v1: delegates to wasm.setItem which raises ConfigUnsupportedError.
@@ -126,9 +186,20 @@ proc writeConfigBytes*(app, dep, filename: string; data: string; compress = fals
     let path = ensureConfigFile(app, dep, filename)
     storeBytes(path, data, compress)
 
+proc readConfigBytes*(app, filename: string): Option[string]
+    {.raises: [ConfigPathError, ConfigParseError, ConfigIOError].} =
+  ## Dep-less form: none() if absent. Checks magic, decompresses, returns raw bytes.
+  when defined(emscripten):
+    let key = configFile(app, filename)
+    return wasm.getItem(key)
+  else:
+    let path = configFile(app, filename)
+    if notFound(path): return none(string)
+    return some(loadBytes(path))
+
 proc readConfigBytes*(app, dep, filename: string): Option[string]
     {.raises: [ConfigPathError, ConfigParseError, ConfigIOError].} =
-  ## none() if absent. Checks magic, decompresses, returns raw bytes.
+  ## Full form: none() if absent. Checks magic, decompresses, returns raw bytes.
   ## On WASM v1: delegates to wasm.getItem which returns none().
   when defined(emscripten):
     let key = configFile(app, dep, filename)
@@ -141,17 +212,40 @@ proc readConfigBytes*(app, dep, filename: string): Option[string]
 
 # ── Typed generic helpers ─────────────────────────────────────────────────────
 
+proc writeConfig*[T](app, filename: string; data: T;
+                     pretty = false; compress = false)
+    {.raises: [ConfigPathError, ConfigUnsupportedError, ConfigIOError].} =
+  ## Dep-less form: %data -> writeConfigJson.
+  when not compiles(%data):
+    {.error: "configy.writeConfig: T has no `%` proc — import its JSON module".}
+  writeConfigJson(app, filename, %data, pretty = pretty, compress = compress)
+
 proc writeConfig*[T](app, dep, filename: string; data: T;
                      pretty = false; compress = false)
     {.raises: [ConfigPathError, ConfigUnsupportedError, ConfigIOError].} =
-  ## %data -> writeConfigJson. Compile-time guard if T has no % proc.
+  ## Full form: %data -> writeConfigJson. Compile-time guard if T has no % proc.
   when not compiles(%data):
     {.error: "configy.writeConfig: T has no `%` proc — import its JSON module".}
   writeConfigJson(app, dep, filename, %data, pretty = pretty, compress = compress)
 
+proc readConfig*[T](app, filename: string): Option[T]
+    {.raises: [ConfigPathError, ConfigParseError, ConfigIOError].} =
+  ## Dep-less form: readConfigJson -> .to(T). none() if absent.
+  when not compiles(block:
+    var j: JsonNode
+    j.to(T)):
+    {.error: "configy.readConfig: T has no `to(T)` conversion — import its JSON module".}
+  let j = readConfigJson(app, filename)
+  if j.isNone: return none(T)
+  try:
+    return some(j.get.to(T))
+  except CatchableError as e:
+    raise newException(ConfigParseError,
+      "type conversion failed for " & filename & ": " & e.msg)
+
 proc readConfig*[T](app, dep, filename: string): Option[T]
     {.raises: [ConfigPathError, ConfigParseError, ConfigIOError].} =
-  ## readConfigJson -> .to(T). none() if absent. ConfigParseError if to(T) fails.
+  ## Full form: readConfigJson -> .to(T). none() if absent. ConfigParseError if to(T) fails.
   when not compiles(block:
     var j: JsonNode
     j.to(T)):
@@ -166,9 +260,28 @@ proc readConfig*[T](app, dep, filename: string): Option[T]
 
 # ── File management ───────────────────────────────────────────────────────────
 
+proc deleteConfig*(app, filename: string): bool
+    {.raises: [ConfigPathError, ConfigUnsupportedError, ConfigIOError].} =
+  ## Dep-less form: delete the file. true if removed, false if absent.
+  when defined(emscripten):
+    raise newException(ConfigUnsupportedError,
+      "deleteConfig: localStorage delete not supported in WASM v1")
+  else:
+    if not isWritable():
+      raise newException(ConfigUnsupportedError,
+        "deleteConfig: target is read-only")
+    let path = configFile(app, filename)
+    if notFound(path): return false
+    try:
+      removeFile(path)
+      return true
+    except CatchableError as e:
+      raise newException(ConfigIOError,
+        "deleteConfig failed for " & path & ": " & e.msg)
+
 proc deleteConfig*(app, dep, filename: string): bool
     {.raises: [ConfigPathError, ConfigUnsupportedError, ConfigIOError].} =
-  ## Delete the file. true if removed, false if absent.
+  ## Full form: delete the file. true if removed, false if absent.
   ## Raises ConfigUnsupportedError on a read-only target.
   when defined(emscripten):
     # TODO(wasm-v2): implement removeItem via localStorage JS interop.
@@ -187,9 +300,19 @@ proc deleteConfig*(app, dep, filename: string): bool
       raise newException(ConfigIOError,
         "deleteConfig failed for " & path & ": " & e.msg)
 
+proc configFileExists*(app, filename: string): bool
+    {.raises: [ConfigPathError].} =
+  ## Dep-less form: true if the file exists. Safe on read-only targets.
+  when defined(emscripten):
+    let key = configFile(app, filename)
+    return wasm.hasItem(key)
+  else:
+    let path = configFile(app, filename)
+    return fileExists(path)
+
 proc configFileExists*(app, dep, filename: string): bool
     {.raises: [ConfigPathError].} =
-  ## True if the file exists. Safe on read-only targets.
+  ## Full form: true if the file exists. Safe on read-only targets.
   when defined(emscripten):
     let key = configFile(app, dep, filename)
     return wasm.hasItem(key)
