@@ -10,6 +10,12 @@ tests/test_*
 !tests/test_*.nim
 !tests/test_*.nims
 
+# 3DS verification gate build artifacts (scripts/build_3ds.sh)
+/ds3_smoke
+/ds3_smoke.3dsx
+/libdl.a
+/librt.a
+
 # Testament output
 testresults/
 

@@ -28,11 +28,15 @@ jobs:
         run: nimble test
 
   platform-define-check:
-    # Verifies that platform-specific when defined(...) branches compile cleanly
-    # on the host OS (Linux). This is NOT a full cross-compile — it uses only the
-    # platform define without --cpu/--os flags, so it catches Nim-level errors but
-    # not SDK/toolchain incompatibilities. Full cross-compile requires devkitARM
-    # (3DS), PSPDEV (PSP), VitaSDK (Vita), or Emscripten (WASM).
+    # Verifies that platform-specific when defined(...) branches compile cleanly.
+    # Uses --compileOnly: Nim emits C but never invokes the cross C compiler, so
+    # no SDK/toolchain is needed here. This catches Nim-level errors, not
+    # SDK/toolchain link incompatibilities. NOTE: -d:ds3 now pulls --cpu:arm
+    # --os:linux + devkitARM flags from the `@if ds3:` block in nim.cfg, so the
+    # ds3 row checks real arm/linux codegen (still compileOnly — no devkitARM on
+    # CI). A full cross-compile + link is exercised by scripts/build_3ds.sh on a
+    # devkitPro machine (see .agents/plans/3ds-support/RESULTS.md). PSP/Vita/WASM
+    # still use only the platform define.
     name: Platform-define check (${{ matrix.target }})
     runs-on: ubuntu-latest
     strategy:
