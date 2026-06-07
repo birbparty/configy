@@ -21,6 +21,8 @@ export PATH="$VITASDK/bin:$PATH"
 GCC="$VITASDK/bin/arm-vita-eabi-gcc"
 AR="$VITASDK/bin/arm-vita-eabi-ar"
 VENDOR="${CONFIGY_VENDOR:-smoketest}"
+# TITLE_ID format is 4 letters + 5 digits. Override via $CONFIGY_VITA_TITLEID to
+# avoid collisions when installing multiple gates side-by-side in one Vita3K.
 TITLE_ID="${CONFIGY_VITA_TITLEID:-CFGY00001}"
 SRC="verify/vita/vita_smoke.nim"
 OUT_ELF="$REPO_ROOT/vita_smoke"
@@ -45,6 +47,9 @@ echo "[build_vita] Using $("$GCC" --version | head -1)"
 # Vita ships a REAL libdl.a (so -ldl resolves natively) but has NO librt. configy
 # pulls in -lrt via std/os→times. An empty librt.a stub satisfies the linker flag;
 # created at repo root because nim.cfg's `--passL:"-L."` searches the link CWD.
+# Removes only build intermediates (all untracked/gitignored). Intentionally LEAVES
+# the installable vita_smoke ELF and vita_smoke.vpk (also gitignored) for the user
+# to run. Never touches tracked files (nim.cfg etc.).
 cleanup() {
   rm -f "$REPO_ROOT/librt.a" "$OUT_VELF" "$OUT_EBOOT" "$OUT_SFO"
 }
@@ -53,7 +58,14 @@ trap cleanup EXIT
 
 # --- Compile + link (cpu/os/opt/toolchain come from @if vita: in nim.cfg) -------
 echo "[build_vita] Compiling $SRC for -d:vita (VitaSDK os:linux+newlib)..."
+# Pass the toolchain paths derived from $VITASDK on the command line so they
+# OVERRIDE the defaults hardcoded in nim.cfg's @if vita: block — this makes
+# $VITASDK authoritative end-to-end (the guard above and Nim drive the SAME SDK),
+# so a non-default install works without editing nim.cfg.
 nim c -d:vita -d:release -d:configyVendor="$VENDOR" \
+  --arm.linux.gcc.path:"$VITASDK/bin" \
+  --passC:"-I$VITASDK/arm-vita-eabi/include" \
+  --passL:"-L$VITASDK/arm-vita-eabi/lib" \
   --path:src --path:verify/vita \
   --out:"$OUT_ELF" "$SRC"
 
@@ -68,6 +80,7 @@ vita-elf-create "$OUT_ELF" "$OUT_VELF"
 echo "[build_vita] vita-make-fself..."
 vita-make-fself "$OUT_VELF" "$OUT_EBOOT"
 echo "[build_vita] vita-mksfoex (TITLE_ID=$TITLE_ID)..."
+# Args: -s TITLE_ID=<id> <app title> <output param.sfo>
 vita-mksfoex -s "TITLE_ID=$TITLE_ID" "configy vita smoke" "$OUT_SFO"
 echo "[build_vita] vita-pack-vpk..."
 vita-pack-vpk -s "$OUT_SFO" -b "$OUT_EBOOT" "$OUT_VPK"
