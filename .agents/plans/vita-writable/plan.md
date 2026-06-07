@@ -9,8 +9,8 @@
 | Priority | **Low — non-blocking** (no known Vita persistence consumer today) |
 | Target repo | `~/git/configy` (`github.com/birbparty/configy`) |
 | Builds on | [`../vita-support/`](../vita-support/) — the read-path gate, ✅ verified on real hardware |
-| Companion docs | [`verification-gate.md`](./verification-gate.md) — write-gate design · [`RESULTS.md`](./RESULTS.md) — **outcome (✅ Vita3K all-PASS; hardware staged/pending)** |
-| Status | **Flipped + Vita3K-VERIFIED 2026-06-06** (`feat/vita-writable`): `configyFsWritable=true` for vita; write round-trip (create/write/read/compress/delete) all PASS in Vita3K; crux resolved positively. Hardware run staged on the card, pending the device. See [`RESULTS.md`](./RESULTS.md). |
+| Companion docs | [`verification-gate.md`](./verification-gate.md) — write-gate design · [`RESULTS.md`](./RESULTS.md) — **outcome (✅ Vita3K + real hardware, all-PASS)** |
+| Status | **VERIFIED ON HARDWARE 2026-06-06** (`feat/vita-writable`): `configyFsWritable=true` for vita; write round-trip (create/write/read/compress/delete) all PASS in Vita3K **and on a physical PS Vita**; crux confirmed on-device. v0.3.0. See [`RESULTS.md`](./RESULTS.md). |
 
 ---
 
@@ -183,16 +183,15 @@ This is a deliberate, observable change on Vita (hence the minor version bump):
 
 ### Phase 2 — Run the write round-trip ✅ Vita3K DONE; ⏳ hardware staged
 - [x] Vita3K: all steps PASS, `isWritable=true`; crux resolved positively (no shim).
-- [ ] Real hardware (gold check): `vita_write_smoke.vpk` staged on the card; install
-      via VitaShell, run `CFGW00001`, read back the marker. Pending the device.
+- [x] Real hardware (gold check): installed `CFGW00001` via VitaShell, ran it — all
+      steps PASS on the device; crux confirmed on-device; no coredump.
 
-### Phase 3 — Land it ✅ mostly DONE
-- [ ] If the shim was needed: implement the `-d:vita` `ensureConfigDir`/`createDir`
-      branch and re-verify. **(Not needed — crux resolved positively in Vita3K.)**
+### Phase 3 — Land it ✅ DONE
+- [x] Shim not needed — crux resolved positively in Vita3K and confirmed on hardware.
 - [x] Bumped `configy.nimble` `0.2.0` → `0.3.0`; updated README platform-table Vita note.
 - [x] Wrote [`RESULTS.md`](./RESULTS.md).
-- [ ] After the hardware run passes, update the `capabilities.nim`/RESULTS wording from
-      "Vita3K-verified, hardware pending" to "hardware-verified".
+- [x] Hardware run passed; updated `capabilities.nim`/RESULTS/plan wording to
+      "hardware-verified".
 
 ---
 

@@ -1,9 +1,9 @@
 # Vita Write Gate — Results
 
-**Status: ✅ VERIFIED IN VITA3K (hardware run staged, pending)** — `configyFsWritable`
-flipped to `true` for `-d:vita`; the full write round-trip passes in Vita3K. The crux
-(`std/os.createDir` over `ux0:`, incl. the already-exists path) resolved **positively**.
-Real-hardware run is staged (vpk on the card) and pending the device.
+**Status: ✅ VERIFIED ON REAL HARDWARE** — `configyFsWritable` flipped to `true` for
+`-d:vita`; the full write round-trip passes in Vita3K **and on a physical PS Vita**.
+The crux (`std/os.createDir` over `ux0:`, incl. the already-exists path) resolved
+**positively on-device**.
 
 - **Date:** 2026-06-06
 - **Machine:** macOS (Apple Silicon), Nim 2.2.10
@@ -44,14 +44,35 @@ second `ensureConfigDir` call — matching the static analysis (newlib maps
 `sceIoMkdir`'s already-exists error → `EEXIST`, which `createDir` tolerates). No
 `sceIoMkdir` shim needed.
 
-## Real hardware (Phase 2 gold check) — ⏳ staged, pending
+## Real hardware (Phase 2 gold check) — ✅ all steps PASS
 
-Vita3K's FS is host-passthrough and more forgiving than the device `sceIo`/exFAT stack
-on exactly these edge cases (already-exists, nested create, delete), so hardware is the
-gold check. `vita_write_smoke.vpk` has been copied to the card (`ux0:/`); to run:
-install it via VitaShell, launch **configy vita_write_smoke** (`CFGW00001`), then read
-back `ux0:/data/configy_write_smoke_result.txt` (expect the same all-PASS marker).
-Tracked in configy-61d.
+Installed `vita_write_smoke.vpk` (`CFGW00001`) on a physical PS Vita via VitaShell and
+ran it. Marker read back from the card (`ux0:/data/configy_write_smoke_result.txt`):
+```
+ensure_create=PASS
+ensure_again=PASS
+write_json=PASS
+read_json=PASS
+write_json_z=PASS
+read_json_z=PASS
+write_bytes=PASS
+read_bytes=PASS
+delete=PASS
+deleted_gone=PASS
+cleanup=PASS
+isWritable=true
+```
+
+**Crux verdict (hardware): CONFIRMED.** `std/os.createDir` creates the nested
+`ux0:data/config/smoketest/wsmoke/` tree on the device and tolerates the already-exists
+path — so the kernel `sceIoMkdir` does emit the conventional `0x80010011`/`EEXIST` on
+already-exists, exactly as the static disassembly predicted. No coredump. The `cleanup`
+step removed `z.json`/`b.bin` (no leftover files on the card; the empty `wsmoke/` dir
+remains, since `deleteConfig` removes files only — as designed).
+
+Vita writes are fully verified: build → link → `vita-elf-create` → `.vpk` → Vita3K →
+**real hardware**, all green. (`-Wl,-q` relocation correctness was already retired by
+the read gate; this run adds the FS-write surface on-device.)
 
 When executed, record:
 

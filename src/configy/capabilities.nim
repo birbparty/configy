@@ -18,12 +18,11 @@ const
 #   sceIo*-backed syscalls with no shim. configyFsWritable is now TRUE for vita:
 #   ux0:data/ is the writable homebrew dir, newlib backs mkdir/write/remove with
 #   sceIo*, and the write round-trip (ensureConfigDir/createDir, writeConfigJson raw+
-#   compressed, writeConfigBytes, deleteConfig) is verified in Vita3K (all steps PASS,
-#   isWritable=true) — see .agents/plans/vita-writable/RESULTS.md. createDir over ux0:
-#   works because newlib maps sceIoMkdir's already-exists error to EEXIST, which
-#   std/os.createDir tolerates. Real-hardware write round-trip pending (Vita3K's
-#   host-passthrough FS is more forgiving than the device sceIo/exFAT stack on
-#   already-exists/nested-create — hardware is the gold check; tracked configy-61d).
+#   compressed, writeConfigBytes, deleteConfig) is verified on real PS Vita hardware
+#   (all steps PASS, isWritable=true) as of 2026-06-06 — see
+#   .agents/plans/vita-writable/RESULTS.md. createDir over ux0: works because newlib
+#   maps sceIoMkdir's already-exists error to EEXIST, which std/os.createDir tolerates
+#   (confirmed on-device, not just Vita3K).
 # PSP: configyFsWritable false until the SDK FS is verified (unverified on a real
 #   toolchain). WASM is false for v1 (localStorage writes not implemented).
 const configyFsWritable* =
