@@ -9,10 +9,16 @@ const
   configyHasSnappy* = true
     ## supersnappy is a required pure-Nim dependency; always available on all targets.
 
-# 3DS: read path verified on devkitARM (os:linux+newlib+libctru) as of 2026-06-06
-#   — compiles, links, and reads sdmc:/ correctly in Azahar (see verify/ds3/ and
-#   scripts/build_3ds.sh). configyFsWritable stays false: writes are not yet
-#   verified/enabled on 3DS (would be a future change; sdmc:/ is writable).
+# 3DS: read path verified on devkitARM (os:linux+newlib+libctru); sdmc:/ reads work in
+#   Azahar (see verify/ds3/ and scripts/build_3ds.sh). configyFsWritable is now TRUE for
+#   ds3: sdmc:/ is writable and a leaf writeFile there already works (the read smoke's
+#   marker). Directory creation uses a -d:ds3 createDirTree branch (fs.nim) that creates
+#   only the real subdirs under sdmc:, NEVER the bare device root: stock std/os.createDir
+#   FAILS on real 3DS hardware because libctru's sdmc devoptab rejects mkdir/stat on the
+#   bare sdmc:/ root with EINVAL (not EEXIST) — confirmed on hardware 2026-06-07; Azahar's
+#   host-passthrough SD masks it. The write round-trip (ensureConfigDir, writeConfigJson
+#   raw+compressed, writeConfigBytes, deleteConfig) is verified on real 3DS hardware with
+#   the shim (all steps PASS) — see .agents/plans/3ds-writable/RESULTS.md.
 # Vita: read path verified on real PS Vita hardware (os:linux+newlib; see verify/vita/
 #   and .agents/plans/vita-support/RESULTS.md) — std/os reaches ux0: via newlib's
 #   sceIo*-backed syscalls with no shim. configyFsWritable is now TRUE for vita:
@@ -26,9 +32,9 @@ const
 # PSP: configyFsWritable false until the SDK FS is verified (unverified on a real
 #   toolchain). WASM is false for v1 (localStorage writes not implemented).
 const configyFsWritable* =
-  when defined(emscripten):          false
-  elif defined(ds3) or defined(psp): false
-  else:                              true
+  when defined(emscripten): false
+  elif defined(psp):        false
+  else:                     true
 
 const configyVendor {.strdefine.} = ""
 

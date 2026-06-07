@@ -20,9 +20,12 @@ export PATH="$DEVKITPRO/tools/bin:$DEVKITARM/bin:$PATH"
 GCC="$DEVKITARM/bin/arm-none-eabi-gcc"
 AR="$DEVKITARM/bin/arm-none-eabi-ar"
 VENDOR="${CONFIGY_VENDOR:-smoketest}"
-SRC="verify/ds3/ds3_smoke.nim"
-OUT_ELF="$REPO_ROOT/ds3_smoke"
-OUT_3DSX="$REPO_ROOT/ds3_smoke.3dsx"
+# Optional arg $1 = source .nim (default: read smoke). No-arg call reproduces the
+# read gate exactly (ds3_smoke). Output base name is derived from the source.
+SRC="${1:-verify/ds3/ds3_smoke.nim}"
+BASE="$(basename "$SRC" .nim)"                 # ds3_smoke | ds3_write_smoke
+OUT_ELF="$REPO_ROOT/$BASE"
+OUT_3DSX="$REPO_ROOT/$BASE.3dsx"
 
 # --- Toolchain guard: absent == PASS-for-scope, exit 0 (not 1) -----------------
 if [[ ! -x "$GCC" ]] || ! command -v 3dsxtool >/dev/null 2>&1; then
@@ -57,4 +60,4 @@ echo "[build_3ds] Packaging .3dsx..."
 3dsxtool "$OUT_ELF" "$OUT_3DSX"
 echo "[build_3ds] Done: $OUT_3DSX"
 echo "[build_3ds] Run it:  open -a Azahar \"$OUT_3DSX\""
-echo "[build_3ds] Then read back: <Azahar sdmc>/configy_smoke_result.txt"
+echo "[build_3ds] Then read back: <Azahar sdmc>/configy_*_result.txt"
