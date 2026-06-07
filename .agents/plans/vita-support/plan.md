@@ -8,8 +8,8 @@
 | Date | 2026-06-06 |
 | Priority | **Low — NON-BLOCKING** (no known Vita consumer today) |
 | Target repo | `~/git/configy` (`github.com/birbparty/configy`) |
-| Companion docs | [`verification-gate.md`](./verification-gate.md) — gate design · [`RESULTS.md`](./RESULTS.md) — **verification outcome (✅ link + vita-elf-create + .vpk; runtime tier pending)** |
-| Status | **Tier B compile/link VERIFIED 2026-06-06** on VitaSDK (`arm-vita-eabi-gcc` 15.2.0). See [`RESULTS.md`](./RESULTS.md). Vita3K/hardware runtime corroboration not yet run. |
+| Companion docs | [`verification-gate.md`](./verification-gate.md) — gate design · [`RESULTS.md`](./RESULTS.md) — **verification outcome (✅ link + vita-elf-create + .vpk + Vita3K runtime; hardware pending)** |
+| Status | **VERIFIED 2026-06-06** on VitaSDK (`arm-vita-eabi-gcc` 15.2.0) + Vita3K v0.2.1: compiles, links, `vita-elf-create` passes, `.vpk` runs and reads `ux0:` correctly (both absent + planted cases). See [`RESULTS.md`](./RESULTS.md). Only real-hardware `-Wl,-q` corroboration remains. |
 | Reference build | `~/git/raylib-nim-multiplatform` — proven Nim-on-Vita build (VitaSDK + raylib-5.5-vita + vitaGL) |
 
 > **Note on this revision:** an initial draft framed "does `std/os` file I/O reach
@@ -276,10 +276,11 @@ A "do not break" guard, not tasks — identical to the 3DS plan:
 - [x] Built with `arm-vita-eabi-gcc` 15.2.0; **links** to a static ARM ELF; the
       3-stub `Sce*` set sufficed (linker reported no more); `vita-elf-create`
       **succeeded** and packaged `vita_smoke.vpk`. `file` confirms ARM. See RESULTS.
-- [ ] Run in Vita3K and read the marker back to corroborate the read path — **not
-      yet run** (GUI emulator, not automatable headless this session). Steps in
-      RESULTS / verify/vita/README.md.
-- [ ] (If a real Vita is available) run on hardware to retire the `-Wl,-q` risk.
+- [x] Ran in Vita3K v0.2.1 and read the marker back — **both cases PASS**: absent →
+      `none()`/false (no raise); planted `\x00{"hello":"vita","n":7}` → found +
+      parsed. Confirms `std/os` reaches `ux0:` with no shim. See RESULTS.
+- [ ] (If a real Vita is available) run on hardware to retire the `-Wl,-q` risk —
+      the one thing Vita3K (loads at link base) cannot prove.
 - [x] **Added** a Vita read-path-verified comment line in `capabilities.nim`.
       `configyFsWritable` left `false`.
 - [x] Wrote [`RESULTS.md`](./RESULTS.md) with the honest tier achieved (compile/link
