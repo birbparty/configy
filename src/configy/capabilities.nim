@@ -14,13 +14,13 @@ const
 #   scripts/build_3ds.sh). configyFsWritable stays false: writes are not yet
 #   verified/enabled on 3DS (would be a future change; sdmc:/ is writable).
 # Vita: read path compiles + links + passes vita-elf-create on VitaSDK
-#   (os:linux+newlib) and runs correctly in Vita3K as of 2026-06-06 (see verify/vita/
-#   and scripts/build_vita.sh). newlib backs file I/O with sceIo* so std/os reaches
-#   ux0: with no shim; Vita3K runtime confirmed both cases: absent file -> none()/
-#   false (no raise), planted file -> found + JSON parsed. CAVEAT: Vita3K loads at
-#   the link base, so the -Wl,-q relocation correctness that only bites at a
-#   non-link base is still UNVERIFIED on real hardware (weaker than the 3DS Azahar
-#   pass; tracked in configy-uzq).
+#   (os:linux+newlib), runs correctly in Vita3K, AND runs correctly on real PS Vita
+#   hardware as of 2026-06-06 (see verify/vita/ and RESULTS.md). newlib backs file
+#   I/O with sceIo* so std/os reaches ux0: with no shim. Hardware run (absent-file
+#   case) wrote the expected marker -> exists=false, read_isNone=true, no raise --
+#   which also RETIRES the -Wl,-q relocation risk: the module loaded and ran at a
+#   non-link base without data-aborting. Planted-file case (found + JSON parsed)
+#   confirmed in Vita3K.
 #   configyFsWritable stays false (conservative: writes unverified on hardware;
 #   ux0:data/ IS writable and newlib backs writes via sceIo*, so enabling them later
 #   is low-cost). NOTE: flipping this to false only compiles out fs.nim's createDir;

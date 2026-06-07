@@ -1,10 +1,11 @@
 # Vita Verification Gate — Results
 
-**Status: ✅ VERIFIED (compile + link + `vita-elf-create` + `.vpk` + Vita3K runtime)**
-— configy's read path compiles, **links**, packages on a real VitaSDK toolchain,
-**and runs correctly in the Vita3K emulator** (both absent- and planted-file cases).
-Real-hardware `-Wl,-q` relocation correctness remains the one item Vita3K cannot
-prove (it loads at the link base); see "Hardware caveat".
+**Status: ✅ VERIFIED ON REAL HARDWARE** (compile + link + `vita-elf-create` +
+`.vpk` + Vita3K runtime + **real PS Vita run**) — configy's read path compiles,
+**links**, packages on a real VitaSDK toolchain, runs correctly in the Vita3K
+emulator (both cases), **and runs correctly on a physical PS Vita** (absent-file
+case). The real-hardware run also retires the `-Wl,-q` relocation risk (see
+"Real-hardware run").
 
 - **Date:** 2026-06-06
 - **Machine:** macOS (Apple Silicon), Nim 2.2.10
@@ -94,19 +95,36 @@ true load-at-non-link-base correctness still needs hardware (tracked in configy-
 5. **No graphics libs.** Stripping the reference's raylib/SDL2/vitaGL link soup was
    correct — configy linked with only libc + the three `Sce*` stubs.
 
-## Not yet done (hardware only)
+## Real-hardware run (✅ PASS — retires the `-Wl,-q` risk)
 
-Only the real-hardware run remains — to retire the `-Wl,-q`-at-non-link-base risk
-that Vita3K structurally cannot exercise (see "Hardware caveat"). Everything testable
-in the emulator passes. To reproduce the Vita3K run:
+Installed `vita_smoke.vpk` (TITLE_ID `CFGY00001`) on a physical PS Vita and ran it.
+The app — being headless (no UI/event loop) — launches, runs the read path, writes
+the marker, and exits, so on-device it just "opens and immediately closes." That is
+the SUCCESS shape, not a crash. Confirmed by reading the card's `ux0:/data/` over USB:
 
-```sh
-./scripts/build_vita.sh                                   # produces vita_smoke.vpk
-VBIN=/Applications/Vita3K.app/Contents/MacOS/Vita3K
-unzip -o vita_smoke.vpk -d "<Vita3K ux0>/app/CFGY00001"  # or install via the GUI
-"$VBIN" -r CFGY00001 --log-level 1                        # retry if it opens the GUI
-cat "<Vita3K ux0>/data/configy_smoke_result.txt"
+**`ux0:data/configy_smoke_result.txt`** (absent-file case, written by the device):
 ```
+resolved_path=ux0:data/config/smoketest/smoke/probe.json
+exists_ok=true   exists=false
+read_ok=true     read_isNone=true
+```
+→ on real hardware: `configFileExists` returns false without raising, `readConfigJson`
+returns `none()` without raising, and `std/os` reached `ux0:` (the marker itself was
+written there). No `.psp2dmp` coredump was produced.
+
+**Why this retires `-Wl,-q`:** the Vita loads a module at a non-link base. A wrong /
+missing `-Wl,-q` relocation set would data-abort on load — the app would NOT run, let
+alone write a correct marker. It ran and wrote correct output, so the relocation
+handling is correct on hardware. This was the one axis Vita3K (loads at link base)
+could not prove.
+
+**Remaining (optional, not blocking):** the planted-file case (`exists=true` +
+parsed JSON) was confirmed in Vita3K but not yet re-run on hardware. The hardware
+absent-file run already exercises module load, relocations, `std/os`→`ux0:` reach,
+and the marker write; the planted case would additionally re-confirm `readFile` +
+magic-strip + `parseJson` on-device (already proven in Vita3K). To do it: create
+`ux0:/data/config/smoketest/smoke/probe.json` containing a `0x00` byte + JSON, then
+re-run CFGY00001 and re-read the marker.
 
 ## Regression check
 
