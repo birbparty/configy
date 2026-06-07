@@ -33,12 +33,34 @@ Confirms round-trip *logic* (create/write/read/compress/delete) under stock `cre
 behave like the host FS, NOT libctru's sdmc devoptab + Horizon FS. This does NOT settle
 the crux.
 
-## Real 3DS hardware (Phase 2b, the decider) — ⏳ pending
+## Real 3DS hardware (Phase 2b, the decider) — stock `createDir` FAILED → shim shipped
 
-`ds3_write_smoke.3dsx` is built and ready. To run: copy it to the 3DS SD card (e.g.
-`/3ds/`), launch via the Homebrew Launcher, then read `sdmc:/configy_write_smoke_result.txt`
-off the card. **stock `createDir` PASS → keep stock, no shim. FAIL → add the
-`createDirTree` contingency** (see verification-gate), rebuild, re-run.
+Ran on a physical 3DS (3 times). **Stock `std/os.createDir` FAILS** — the crux fired
+exactly as predicted:
+```
+ensure_create=FAIL:ensureConfigDir failed for sdmc:/config/smoketest/wsmoke/: Invalid argument
+Additional info: sdmc:/
+```
+libctru's sdmc devoptab rejects `mkdir`/`stat` on the bare `sdmc:/` device root with
+**EINVAL (not EEXIST)**, so `createDir`'s first op raises and the whole write surface
+fails. This is precisely why Azahar (host passthrough → `mkdir("sdmc:/")` hits an
+existing host dir → EEXIST → tolerated) passed while hardware failed. **Azahar masked
+the crux completely; only the device settled it** — vindicating the decision to commit
+to a hardware run.
+
+**Resolution: shipped the `-d:ds3` `createDirTree` contingency** (`fs.nim`) — creates
+only the real subdirs under the device root (`sdmc:/config`, …/`<vendor>`, …/`<app>`)
+via single-level `existsOrCreateDir`, never touching bare `sdmc:/`. Routed in via the
+existing `ensureConfigDir` call sites (both overloads). Rebuilt; Azahar sanity of the
+shim is all-PASS (it doesn't regress the logic). The new `.3dsx` is staged on the card.
+
+## Real 3DS hardware — shim re-run (Phase 2b') — ⏳ pending
+
+`ds3_write_smoke.3dsx` (with the shim) staged at `ux0`… `sdmc:/3ds/ds3_write_smoke.3dsx`
+on the card; stale marker cleared. Re-run via the Homebrew Launcher, then read
+`sdmc:/configy_write_smoke_result.txt`. Expect all PASS — confirming the shim creates
+the nested tree on Horizon FS (nested `mkdir` + dir-`stat`, which the read gate never
+exercised).
 
 ---
 

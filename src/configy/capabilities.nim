@@ -12,11 +12,12 @@ const
 # 3DS: read path verified on devkitARM (os:linux+newlib+libctru); sdmc:/ reads work in
 #   Azahar (see verify/ds3/ and scripts/build_3ds.sh). configyFsWritable is now TRUE for
 #   ds3: sdmc:/ is writable and a leaf writeFile there already works (the read smoke's
-#   marker). Directory creation uses stock std/os.createDir, which mkdir's/stats the bare
-#   sdmc:/ device root first — whether libctru's sdmc devoptab tolerates that (vs needing
-#   a -d:ds3 createDirTree shim that skips the root) is decided by the real-hardware run.
-#   Write round-trip (ensureConfigDir/createDir, writeConfigJson raw+compressed,
-#   writeConfigBytes, deleteConfig) verification status: see
+#   marker). Directory creation uses a -d:ds3 createDirTree branch (fs.nim) that creates
+#   only the real subdirs under sdmc:, NEVER the bare device root: stock std/os.createDir
+#   FAILS on real 3DS hardware because libctru's sdmc devoptab rejects mkdir/stat on the
+#   bare sdmc:/ root with EINVAL (not EEXIST) — confirmed on hardware 2026-06-07; Azahar's
+#   host-passthrough SD masks it. Write round-trip (ensureConfigDir, writeConfigJson raw+
+#   compressed, writeConfigBytes, deleteConfig) verification status: see
 #   .agents/plans/3ds-writable/RESULTS.md.
 # Vita: read path verified on real PS Vita hardware (os:linux+newlib; see verify/vita/
 #   and .agents/plans/vita-support/RESULTS.md) — std/os reaches ux0: via newlib's

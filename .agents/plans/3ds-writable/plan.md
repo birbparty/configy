@@ -10,7 +10,7 @@
 | Target repo | `~/git/configy` (`github.com/birbparty/configy`) |
 | Builds on | [`../3ds-support/`](../3ds-support/) (read gate, Azahar-verified) · pattern from [`../vita-writable/`](../vita-writable/) (write gate, hardware-verified) |
 | Companion docs | [`verification-gate.md`](./verification-gate.md) — write-gate design · [`RESULTS.md`](./RESULTS.md) — **outcome (✅ Azahar logic smoke; real-hardware decider pending)** |
-| Status | **Flipped + Azahar-smoke PASS 2026-06-07** (`feat/3ds-writable`, stacked on `feat/vita-writable`): `configyFsWritable=true` for ds3, write round-trip all PASS in Azahar with stock `createDir`. Real-3DS run is the crux decider (stock vs `createDirTree` shim) — pending the device. v0.4.0. |
+| Status | **Crux DECIDED on hardware 2026-06-07** (`feat/3ds-writable`, stacked on `feat/vita-writable`): stock `createDir` **FAILS** on a real 3DS (EINVAL on bare `sdmc:/`) → shipped the `-d:ds3` `createDirTree` shim (skips the device root). Azahar all-PASS with the shim; **shim hardware re-run pending**. v0.4.0. See [`RESULTS.md`](./RESULTS.md). |
 
 ---
 

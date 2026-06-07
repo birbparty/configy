@@ -10,6 +10,31 @@ proc isWritable*(): bool {.raises: [].} =
   ## ensureConfigDir can still raise ConfigIOError at runtime on writable platforms.
   configyFsWritable
 
+proc createDirTree(dir: string) =
+  ## Create `dir` and any missing parents.
+  ##
+  ## On 3DS, std/os.createDir cannot be used directly: it walks parentDirs from the
+  ## root, so for an `sdmc:/config/...` path its FIRST mkdir/stat targets the bare
+  ## `sdmc:/` device root — which libctru's sdmc devoptab rejects with EINVAL (NOT
+  ## EEXIST), so createDir raises and every write fails. (Confirmed on real 3DS
+  ## hardware 2026-06-07; Azahar's host-passthrough SD masks it. See
+  ## .agents/plans/3ds-writable/RESULTS.md.) So the ds3 branch creates only the real
+  ## subdirs UNDER the device root, never touching the bare `device:/` prefix.
+  when defined(ds3):
+    # Skip the "device:/" prefix: scan to the first ':' then past the following '/'.
+    var p = 0
+    while p < dir.len and dir[p] != ':': inc p
+    inc p
+    while p < dir.len and dir[p] == '/': inc p
+    # Create each cumulative real subdir (sdmc:/config, …/<vendor>, …/<app>[, …/<dep>]).
+    for i in p ..< dir.len:
+      if dir[i] == '/':
+        let sub = dir[0 ..< i]
+        if not dirExists(sub):
+          discard existsOrCreateDir(sub)  # single-level; never recurses to the root
+  else:
+    createDir(dir)
+
 proc ensureConfigDir*(app: string): string {.raises: [ConfigPathError, ConfigIOError].} =
   ## Dep-less form: resolve configDir(app) and create the directory (and parents) if missing.
   ## Returns the directory path.
@@ -19,7 +44,7 @@ proc ensureConfigDir*(app: string): string {.raises: [ConfigPathError, ConfigIOE
   result = configDir(app)
   when configyFsWritable:
     try:
-      createDir(result)
+      createDirTree(result)
     except CatchableError as e:
       raise newException(ConfigIOError,
         "ensureConfigDir failed for " & result & ": " & e.msg)
@@ -34,7 +59,7 @@ proc ensureConfigDir*(app, dep: string): string {.raises: [ConfigPathError, Conf
   result = configDir(app, dep)
   when configyFsWritable:
     try:
-      createDir(result)
+      createDirTree(result)
     except CatchableError as e:
       raise newException(ConfigIOError,
         "ensureConfigDir failed for " & result & ": " & e.msg)
