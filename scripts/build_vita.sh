@@ -21,15 +21,19 @@ export PATH="$VITASDK/bin:$PATH"
 GCC="$VITASDK/bin/arm-vita-eabi-gcc"
 AR="$VITASDK/bin/arm-vita-eabi-ar"
 VENDOR="${CONFIGY_VENDOR:-smoketest}"
-# TITLE_ID format is 4 letters + 5 digits. Override via $CONFIGY_VITA_TITLEID to
-# avoid collisions when installing multiple gates side-by-side in one Vita3K.
-TITLE_ID="${CONFIGY_VITA_TITLEID:-CFGY00001}"
-SRC="verify/vita/vita_smoke.nim"
-OUT_ELF="$REPO_ROOT/vita_smoke"
-OUT_VELF="$REPO_ROOT/vita_smoke.velf"
+# Optional args: $1 = source .nim (default: read smoke), $2 = TITLE_ID.
+# No-arg call reproduces the read gate exactly (vita_smoke / CFGY00001).
+SRC="${1:-verify/vita/vita_smoke.nim}"
+BASE="$(basename "$SRC" .nim)"                 # vita_smoke | vita_write_smoke
+# TITLE_ID format is 4 letters + 5 digits. Override via arg $2 or $CONFIGY_VITA_TITLEID
+# to avoid collisions when installing multiple gates side-by-side in one Vita3K.
+TITLE_ID="${2:-${CONFIGY_VITA_TITLEID:-CFGY00001}}"
+APP_TITLE="${CONFIGY_VITA_TITLE:-configy $BASE}"
+OUT_ELF="$REPO_ROOT/$BASE"
+OUT_VELF="$REPO_ROOT/$BASE.velf"
 OUT_EBOOT="$REPO_ROOT/eboot.bin"
 OUT_SFO="$REPO_ROOT/param.sfo"
-OUT_VPK="$REPO_ROOT/vita_smoke.vpk"
+OUT_VPK="$REPO_ROOT/$BASE.vpk"
 
 # --- Toolchain guard: absent == PASS-for-scope, exit 0 (not 1) -----------------
 if [[ ! -x "$GCC" ]] || ! command -v vita-elf-create >/dev/null 2>&1 \
@@ -81,10 +85,10 @@ echo "[build_vita] vita-make-fself..."
 vita-make-fself "$OUT_VELF" "$OUT_EBOOT"
 echo "[build_vita] vita-mksfoex (TITLE_ID=$TITLE_ID)..."
 # Args: -s TITLE_ID=<id> <app title> <output param.sfo>
-vita-mksfoex -s "TITLE_ID=$TITLE_ID" "configy vita smoke" "$OUT_SFO"
+vita-mksfoex -s "TITLE_ID=$TITLE_ID" "$APP_TITLE" "$OUT_SFO"
 echo "[build_vita] vita-pack-vpk..."
 vita-pack-vpk -s "$OUT_SFO" -b "$OUT_EBOOT" "$OUT_VPK"
 
 echo "[build_vita] Done: $OUT_VPK"
-echo "[build_vita] Install in Vita3K (or hardware), run it, then read back:"
-echo "[build_vita]   <Vita3K ux0>/data/configy_smoke_result.txt"
+echo "[build_vita] Install in Vita3K (or hardware), run it, then read back the marker:"
+echo "[build_vita]   <Vita3K ux0>/data/configy_*_result.txt"

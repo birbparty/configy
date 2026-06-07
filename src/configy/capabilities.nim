@@ -13,24 +13,22 @@ const
 #   — compiles, links, and reads sdmc:/ correctly in Azahar (see verify/ds3/ and
 #   scripts/build_3ds.sh). configyFsWritable stays false: writes are not yet
 #   verified/enabled on 3DS (would be a future change; sdmc:/ is writable).
-# Vita: read path compiles + links + passes vita-elf-create on VitaSDK
-#   (os:linux+newlib), runs correctly in Vita3K, AND runs correctly on real PS Vita
-#   hardware as of 2026-06-06 (see verify/vita/ and RESULTS.md). newlib backs file
-#   I/O with sceIo* so std/os reaches ux0: with no shim. Real-hardware run confirmed
-#   BOTH cases: absent file -> exists=false/none() (no raise); planted file -> found
-#   + JSON parsed (no raise). This also RETIRES the -Wl,-q relocation risk: the
-#   module loaded and ran at a non-link base without data-aborting.
-#   configyFsWritable stays false (conservative: writes unverified on hardware;
-#   ux0:data/ IS writable and newlib backs writes via sceIo*, so enabling them later
-#   is low-cost). NOTE: flipping this to false only compiles out fs.nim's createDir;
-#   store.nim's write APIs gate at runtime via isWritable() — a runtime read-only
-#   posture, not a link-surface change.
-# PSP: default false until the SDK FS is verified (unverified on a real toolchain).
-# WASM is false for v1 (localStorage writes not implemented).
+# Vita: read path verified on real PS Vita hardware (os:linux+newlib; see verify/vita/
+#   and .agents/plans/vita-support/RESULTS.md) — std/os reaches ux0: via newlib's
+#   sceIo*-backed syscalls with no shim. configyFsWritable is now TRUE for vita:
+#   ux0:data/ is the writable homebrew dir, newlib backs mkdir/write/remove with
+#   sceIo*, and the write round-trip (ensureConfigDir/createDir, writeConfigJson raw+
+#   compressed, writeConfigBytes, deleteConfig) is verified on real PS Vita hardware
+#   (all steps PASS, isWritable=true) as of 2026-06-06 — see
+#   .agents/plans/vita-writable/RESULTS.md. createDir over ux0: works because newlib
+#   maps sceIoMkdir's already-exists error to EEXIST, which std/os.createDir tolerates
+#   (confirmed on-device, not just Vita3K).
+# PSP: configyFsWritable false until the SDK FS is verified (unverified on a real
+#   toolchain). WASM is false for v1 (localStorage writes not implemented).
 const configyFsWritable* =
-  when defined(emscripten):                            false
-  elif defined(ds3) or defined(psp) or defined(vita): false
-  else:                                                true
+  when defined(emscripten):          false
+  elif defined(ds3) or defined(psp): false
+  else:                              true
 
 const configyVendor {.strdefine.} = ""
 

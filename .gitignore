@@ -16,10 +16,13 @@ tests/test_*
 /libdl.a
 /librt.a
 
-# Vita verification gate build artifacts (scripts/build_vita.sh)
+# Vita verification gate build artifacts (scripts/build_vita.sh, build_vita_write.sh)
 /vita_smoke
 /vita_smoke.velf
 /vita_smoke.vpk
+/vita_write_smoke
+/vita_write_smoke.velf
+/vita_write_smoke.vpk
 /eboot.bin
 /param.sfo
 
