@@ -16,9 +16,9 @@ const
 #   only the real subdirs under sdmc:, NEVER the bare device root: stock std/os.createDir
 #   FAILS on real 3DS hardware because libctru's sdmc devoptab rejects mkdir/stat on the
 #   bare sdmc:/ root with EINVAL (not EEXIST) — confirmed on hardware 2026-06-07; Azahar's
-#   host-passthrough SD masks it. Write round-trip (ensureConfigDir, writeConfigJson raw+
-#   compressed, writeConfigBytes, deleteConfig) verification status: see
-#   .agents/plans/3ds-writable/RESULTS.md.
+#   host-passthrough SD masks it. The write round-trip (ensureConfigDir, writeConfigJson
+#   raw+compressed, writeConfigBytes, deleteConfig) is verified on real 3DS hardware with
+#   the shim (all steps PASS) — see .agents/plans/3ds-writable/RESULTS.md.
 # Vita: read path verified on real PS Vita hardware (os:linux+newlib; see verify/vita/
 #   and .agents/plans/vita-support/RESULTS.md) — std/os reaches ux0: via newlib's
 #   sceIo*-backed syscalls with no shim. configyFsWritable is now TRUE for vita:

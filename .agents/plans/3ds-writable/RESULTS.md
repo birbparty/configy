@@ -1,10 +1,11 @@
 # 3DS Write Gate — Results
 
-**Status: ⏳ Azahar logic smoke PASS (stock `createDir`); real-hardware decider PENDING.**
-Built `-d:ds3` with `configyFsWritable=true` and **stock `std/os.createDir`**; the write
-round-trip passes in Azahar. The crux (device-root `mkdir`/`stat` on real Horizon FS) is
-NOT settled by Azahar (host passthrough) — the real-3DS run decides whether stock
-`createDir` stands or the `createDirTree` contingency is needed.
+**Status: ✅ VERIFIED ON REAL 3DS HARDWARE** (with the `-d:ds3` `createDirTree` shim).
+`configyFsWritable=true` for ds3; the full write round-trip passes on a physical 3DS.
+The crux was decided on hardware: stock `std/os.createDir` FAILS (EINVAL on the bare
+`sdmc:/` device root); the `createDirTree` shim that skips the root is required and
+confirmed working. Azahar masked the failure entirely (host passthrough) — only the
+device settled it.
 
 - **Date:** 2026-06-07
 - **Toolchain:** devkitARM release 66, `arm-none-eabi-gcc` 15.1.0; `3dsxtool`
@@ -54,13 +55,28 @@ via single-level `existsOrCreateDir`, never touching bare `sdmc:/`. Routed in vi
 existing `ensureConfigDir` call sites (both overloads). Rebuilt; Azahar sanity of the
 shim is all-PASS (it doesn't regress the logic). The new `.3dsx` is staged on the card.
 
-## Real 3DS hardware — shim re-run (Phase 2b') — ⏳ pending
+## Real 3DS hardware — shim re-run (Phase 2b') — ✅ all PASS
 
-`ds3_write_smoke.3dsx` (with the shim) staged at `ux0`… `sdmc:/3ds/ds3_write_smoke.3dsx`
-on the card; stale marker cleared. Re-run via the Homebrew Launcher, then read
-`sdmc:/configy_write_smoke_result.txt`. Expect all PASS — confirming the shim creates
-the nested tree on Horizon FS (nested `mkdir` + dir-`stat`, which the read gate never
-exercised).
+Re-ran `ds3_write_smoke.3dsx` (with the `createDirTree` shim) on the physical 3DS.
+Marker read back from the card:
+```
+ensure_create=PASS   ensure_again=PASS
+write_json=PASS      read_json=PASS
+write_json_z=PASS    read_json_z=PASS
+write_bytes=PASS     read_bytes=PASS
+delete=PASS          deleted_gone=PASS
+cleanup=PASS         isWritable=true
+```
+→ on real hardware, the shim creates the nested `sdmc:/config/smoketest/wsmoke/` tree
+(nested `mkdir` + dir-`stat` on Horizon FS — never the bare root), the full read/write
+round-trip works (raw + compressed), `deleteConfig` removes the file, and
+`configFileExists` is false afterward. No crash dump. **3DS writes are verified on real
+hardware.** (`deleteConfig` removes files only — the empty `wsmoke/` dir remains, as
+designed.)
+
+**Crux verdict (final):** stock `std/os.createDir` fails on the bare `sdmc:/` root
+(EINVAL); the `-d:ds3` `createDirTree` shim (skip the device root, single-level
+`existsOrCreateDir` per real subdir) is required and confirmed working on hardware.
 
 ---
 

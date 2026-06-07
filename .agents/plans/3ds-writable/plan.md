@@ -10,7 +10,7 @@
 | Target repo | `~/git/configy` (`github.com/birbparty/configy`) |
 | Builds on | [`../3ds-support/`](../3ds-support/) (read gate, Azahar-verified) · pattern from [`../vita-writable/`](../vita-writable/) (write gate, hardware-verified) |
 | Companion docs | [`verification-gate.md`](./verification-gate.md) — write-gate design · [`RESULTS.md`](./RESULTS.md) — **outcome (✅ Azahar logic smoke; real-hardware decider pending)** |
-| Status | **Crux DECIDED on hardware 2026-06-07** (`feat/3ds-writable`, stacked on `feat/vita-writable`): stock `createDir` **FAILS** on a real 3DS (EINVAL on bare `sdmc:/`) → shipped the `-d:ds3` `createDirTree` shim (skips the device root). Azahar all-PASS with the shim; **shim hardware re-run pending**. v0.4.0. See [`RESULTS.md`](./RESULTS.md). |
+| Status | **VERIFIED ON HARDWARE 2026-06-07** (`feat/3ds-writable`, stacked on `feat/vita-writable`): `configyFsWritable=true` for ds3; write round-trip all PASS on a physical 3DS. Crux decided on-device: stock `createDir` FAILS (EINVAL on bare `sdmc:/`) → shipped the `-d:ds3` `createDirTree` shim (skips the device root), confirmed working on hardware. v0.4.0. See [`RESULTS.md`](./RESULTS.md). |
 
 ---
 
@@ -206,24 +206,21 @@ read-only targets (psp/wasm); `isWritable()` stays the single capability signal.
       packaged `ds3_write_smoke.3dsx`; the delete path (`removeFile`→`unlink`) linked
       with no unresolved symbols.
 
-### Phase 2 — Run the write round-trip (Azahar smoke ✅, then real 3DS gold check ⏳)
+### Phase 2 — Run the write round-trip (Azahar smoke ✅, real 3DS gold check ✅)
 - [x] **Azahar:** ran, marker all PASS (`isWritable=true`) — logic smoke confirmed. Its
       passthrough SD does NOT exercise Horizon FS dir semantics — not the decider.
-- [ ] **Real 3DS hardware (the decider + gold check):** run the `.3dsx`, read the marker
-      off the SD card. This settles the crux: did **stock `createDir`** (mkdir/stat on
-      `sdmc:/`) create the tree on Horizon FS?
-- [ ] (Opportunistic, nearly free) Re-run the **read** smoke on hardware too, to retire
-      the read gate's outstanding Azahar-only status and establish the dir-stat baseline.
-- [ ] Record the crux verdict in RESULTS: stock `createDir` worked → no shim; or failed
-      → proceed to the Phase 3 contingency.
+- [x] **Real 3DS hardware (the decider):** ran the `.3dsx` — **stock `createDir` FAILED**
+      (EINVAL on bare `sdmc:/`). Crux settled on-device. Azahar had masked it.
+- [ ] (Opportunistic, not done) Re-run the read smoke on hardware to retire its
+      Azahar-only status — deferred; not blocking the write work.
+- [x] Recorded the crux verdict in RESULTS: stock failed → shipped the Phase 3 shim.
 
-### Phase 3 — Land it (+ contingency only if Phase 2 failed)
-- [ ] **Only if stock `createDir` failed on hardware:** add the `-d:ds3` contingency via
-      a `createDirTree` helper at the existing `ensureConfigDir` call site (both
-      overloads; `existsOrCreateDir` per real subdir, never bare `sdmc:/` — see
-      verification-gate), rebuild, and re-run on hardware to confirm.
-- [ ] Bump `configy.nimble` `0.3.0` → `0.4.0`; update README platform table (3DS Write).
-- [ ] Write [`RESULTS.md`](./RESULTS.md) with the honest tier reached (hardware).
+### Phase 3 — Land it (+ contingency, which Phase 2 required) ✅ DONE
+- [x] Stock `createDir` failed on hardware → added the `-d:ds3` `createDirTree` helper at
+      the existing `ensureConfigDir` call sites (both overloads; `existsOrCreateDir` per
+      real subdir, never bare `sdmc:/`), rebuilt, **re-ran on hardware: all PASS.**
+- [x] Bumped `configy.nimble` `0.3.0` → `0.4.0`; updated README platform table (3DS Write).
+- [x] Wrote [`RESULTS.md`](./RESULTS.md) — hardware-verified.
 
 ---
 
