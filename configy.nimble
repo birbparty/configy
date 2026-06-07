@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.3.0"
+version       = "0.4.0"
 author        = "Matt Spurlin"
 description   = "Cross-platform configuration path resolver and storage library for Nim (XDG-compliant paths)"
 license       = "MIT"
