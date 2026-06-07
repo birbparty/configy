@@ -141,7 +141,7 @@ let file2 = ensureConfigFile("myapp", "settings.json")
 |--------------|:------------:|:----------:|:----:|:-----:|:--------:|-------------------------------------------|
 | Desktop      | yes          | yes        | yes  | yes   | yes      | Full support; XDG-compliant               |
 | Windows      | yes          | yes        | yes  | yes   | yes      | `~/.config/` root (XDG-literal, not APPDATA) |
-| PS Vita      | yes          | yes        | yes  | yes   | yes      | `ux0:data` is writable                    |
+| PS Vita      | yes          | yes        | yes  | yes   | yes      | `ux0:data` writable; read hw-verified, writes Vita3K-verified (v0.3.0) |
 | Nintendo 3DS | yes          | yes*       | yes  | yes*  | yes*     | *Write-capability gated; verify SDK       |
 | PSP          | yes          | yes*       | yes  | yes*  | yes*     | *Write-capability gated; verify SDK       |
 | WebAssembly  | yes          | n/a        | stub | stub  | stub†    | localStorage; v2 impl                     |
