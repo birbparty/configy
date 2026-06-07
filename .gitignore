@@ -16,6 +16,13 @@ tests/test_*
 /libdl.a
 /librt.a
 
+# Vita verification gate build artifacts (scripts/build_vita.sh)
+/vita_smoke
+/vita_smoke.velf
+/vita_smoke.vpk
+/eboot.bin
+/param.sfo
+
 # Testament output
 testresults/
 
