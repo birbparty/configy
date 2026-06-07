@@ -102,29 +102,36 @@ The app — being headless (no UI/event loop) — launches, runs the read path, 
 the marker, and exits, so on-device it just "opens and immediately closes." That is
 the SUCCESS shape, not a crash. Confirmed by reading the card's `ux0:/data/` over USB:
 
-**`ux0:data/configy_smoke_result.txt`** (absent-file case, written by the device):
+Both cases were run on the device (read the card's `ux0:/data/` over USB between runs):
+
+**Absent-file case** — `ux0:data/configy_smoke_result.txt`:
 ```
 resolved_path=ux0:data/config/smoketest/smoke/probe.json
 exists_ok=true   exists=false
 read_ok=true     read_isNone=true
 ```
-→ on real hardware: `configFileExists` returns false without raising, `readConfigJson`
-returns `none()` without raising, and `std/os` reached `ux0:` (the marker itself was
-written there). No `.psp2dmp` coredump was produced.
+→ `configFileExists` returns false without raising; `readConfigJson` returns `none()`
+without raising; `std/os` reached `ux0:` (the marker itself was written there).
+
+**Planted-file case** — after planting `\x00{"hello":"vita","n":7}` at
+`ux0:/data/config/smoketest/smoke/probe.json` and re-running CFGY00001:
+```
+exists_ok=true   exists=true
+read_ok=true     read_isNone=false
+read_parsed={"hello":"vita","n":7}
+```
+→ on real hardware: file found, `MagicRaw` byte stripped, JSON parsed correctly, no
+raise. Confirms the full read path (`fileExists` → `readFile` → magic framing →
+`parseJson`) on-device. No `.psp2dmp` coredump was produced by either run.
 
 **Why this retires `-Wl,-q`:** the Vita loads a module at a non-link base. A wrong /
 missing `-Wl,-q` relocation set would data-abort on load — the app would NOT run, let
-alone write a correct marker. It ran and wrote correct output, so the relocation
-handling is correct on hardware. This was the one axis Vita3K (loads at link base)
-could not prove.
+alone write correct output. It ran and produced correct output for both cases, so the
+relocation handling is correct on hardware. This was the one axis Vita3K (loads at
+link base) could not prove.
 
-**Remaining (optional, not blocking):** the planted-file case (`exists=true` +
-parsed JSON) was confirmed in Vita3K but not yet re-run on hardware. The hardware
-absent-file run already exercises module load, relocations, `std/os`→`ux0:` reach,
-and the marker write; the planted case would additionally re-confirm `readFile` +
-magic-strip + `parseJson` on-device (already proven in Vita3K). To do it: create
-`ux0:/data/config/smoketest/smoke/probe.json` containing a `0x00` byte + JSON, then
-re-run CFGY00001 and re-read the marker.
+**Nothing remains.** Both read-path branches are verified on real hardware. (Writes
+are still out of scope by design — `configyFsWritable=false` on vita; see below.)
 
 ## Regression check
 

@@ -279,10 +279,12 @@ A "do not break" guard, not tasks — identical to the 3DS plan:
 - [x] Ran in Vita3K v0.2.1 and read the marker back — **both cases PASS**: absent →
       `none()`/false (no raise); planted `\x00{"hello":"vita","n":7}` → found +
       parsed. Confirms `std/os` reaches `ux0:` with no shim. See RESULTS.
-- [x] Ran on a physical PS Vita — absent-file case PASS (marker on the card:
-      `exists=false`, `read_isNone=true`, no raise, no coredump). The module loaded
-      and ran at a non-link base without data-aborting, **retiring the `-Wl,-q`
-      relocation risk** — the one thing Vita3K (loads at link base) could not prove.
+- [x] Ran on a physical PS Vita — **both cases PASS** (markers on the card): absent →
+      `exists=false`/`read_isNone=true`; planted `\x00{"hello":"vita","n":7}` →
+      `exists=true`/`read_parsed={"hello":"vita","n":7}`; no raise, no coredump. The
+      module loaded and ran at a non-link base without data-aborting, **retiring the
+      `-Wl,-q` relocation risk** — the one thing Vita3K (loads at link base) could
+      not prove.
 - [x] **Added** a Vita read-path-verified comment line in `capabilities.nim`.
       `configyFsWritable` left `false`.
 - [x] Wrote [`RESULTS.md`](./RESULTS.md) with the honest tier achieved (compile/link

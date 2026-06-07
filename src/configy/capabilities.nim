@@ -16,11 +16,10 @@ const
 # Vita: read path compiles + links + passes vita-elf-create on VitaSDK
 #   (os:linux+newlib), runs correctly in Vita3K, AND runs correctly on real PS Vita
 #   hardware as of 2026-06-06 (see verify/vita/ and RESULTS.md). newlib backs file
-#   I/O with sceIo* so std/os reaches ux0: with no shim. Hardware run (absent-file
-#   case) wrote the expected marker -> exists=false, read_isNone=true, no raise --
-#   which also RETIRES the -Wl,-q relocation risk: the module loaded and ran at a
-#   non-link base without data-aborting. Planted-file case (found + JSON parsed)
-#   confirmed in Vita3K.
+#   I/O with sceIo* so std/os reaches ux0: with no shim. Real-hardware run confirmed
+#   BOTH cases: absent file -> exists=false/none() (no raise); planted file -> found
+#   + JSON parsed (no raise). This also RETIRES the -Wl,-q relocation risk: the
+#   module loaded and ran at a non-link base without data-aborting.
 #   configyFsWritable stays false (conservative: writes unverified on hardware;
 #   ux0:data/ IS writable and newlib backs writes via sceIo*, so enabling them later
 #   is low-cost). NOTE: flipping this to false only compiles out fs.nim's createDir;
