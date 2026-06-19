@@ -86,9 +86,6 @@ const
   vmuPort* = 0.cint  # Port A
   vmuUnit* = 1.cint  # Unit 1 (slot 1 = a1)
 
-# Conservative overhead for capacity check: VMS header + icon + block rounding.
-# vmu_pkg_build pads to 512-byte blocks; we budget 2 blocks (1024 bytes) for overhead.
-const vmsOverheadBlocks* = 2
 
 proc vmuSlotA1(): ptr MapleDevice {.inline.} =
   maple_enum_dev(vmuPort, vmuUnit)
@@ -254,6 +251,11 @@ proc writeVmuFile*(logicalPath: string; payload: string) =
   try:
     let neededBlocks = (int(vmsSize) + 511) div 512
     let available = freeBlocks()
+    # Conservative check: when VMUFS_OVERWRITE deletes an existing file, the
+    # freed blocks are not credited here. Re-saving a config on a near-full card
+    # may produce a false-positive "VMU full" even if the overwrite would fit.
+    # This is safe (writes are only rejected, not silently broken), and acceptable
+    # given configy's typical <10 small files per card.
     if available < neededBlocks:
       raise newException(ConfigIOError,
         "VMU full (" & $available & " blocks free, need " & $neededBlocks & ")")
