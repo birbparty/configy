@@ -71,8 +71,9 @@ proc vmu_pkg_build(src: ptr VmuPkg; dst: ptr ptr uint8; dst_size: ptr cint): cin
   # allocated — do NOT c_free. On success, caller must c_free(*dst) in a finally
   # block that also covers vmufs_write failure (i.e. free on all exit paths once allocated).
 
-proc vmu_pkg_parse(data: ptr uint8; data_size: csize_t; pkg: ptr VmuPkg): cint
+proc vmu_pkg_parse(data: ptr uint8; pkg: ptr VmuPkg): cint
   {.importc: "vmu_pkg_parse", header: "dc/vmu_pkg.h".}
+  # KOS vmu_pkg_parse takes (data, pkg) — no data_size (both gcc-4.7 and gcc-9 KOS).
   # pkg->data BORROWS a pointer into `data` — NOT a copy.
   # Copy pkg.data_len bytes BEFORE freeing the source buffer.
 
@@ -294,8 +295,7 @@ proc readVmuFile*(logicalPath: string): string
   # outbuf is C-malloc'd from here; pkg.data borrows into it — copy first
   try:
     var pkg: VmuPkg
-    if vmu_pkg_parse(cast[ptr uint8](outbuf), csize_t(outsize),
-                     addr pkg) < 0:
+    if vmu_pkg_parse(cast[ptr uint8](outbuf), addr pkg) < 0:
       raise newException(ConfigParseError,
         "VMU file CRC check failed for " & logicalPath)
     result = newString(pkg.data_len)

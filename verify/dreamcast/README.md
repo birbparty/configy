@@ -6,10 +6,12 @@ PASS/FAIL lines.
 
 ## Prerequisites
 
-- KOS toolchain installed (`sh-elf-gcc`, `KOS_BASE`, `KOS_CC_BASE`)
-- [Flycast](https://github.com/flyinghead/flycast) built with serial support
-- A GD-ROM image tool (e.g. `mkdcdisc`) if booting from CDI (optional for
-  Flycast, which can load ELF directly via `flycast -elf dreamcast_smoke.elf`)
+- Docker running with the `haydenkow/nu_dckos` image (complete KOS + sh-elf-gcc 4.7.3)
+- `nim` in PATH on the host (generates C; the Docker container compiles + links)
+- [Flycast](https://github.com/flyinghead/flycast) installed (can load ELF directly)
+
+**Note:** The native KOS toolchain at `~/dreamcast-toolchain/dc/` is GCC pass-1 only
+(no newlib/libkallisti). Use `scripts/build_dreamcast_docker.sh` for actual builds.
 
 ## 1. Read-path gate (`dreamcast_smoke.elf`)
 
@@ -17,8 +19,8 @@ Verifies that `configFileExists` and `readConfigJson` do not raise on a Dreamcas
 with no (or an empty) VMU at slot a1.
 
 ```bash
-# Build
-./scripts/build_dreamcast.sh
+# Build (two-phase: nim→C on host, sh-elf-gcc+KOS link in Docker)
+./scripts/build_dreamcast_docker.sh verify/dreamcast/dreamcast_smoke.nim
 
 # Run in Flycast (direct ELF boot)
 flycast -elf dreamcast_smoke.elf
@@ -42,11 +44,12 @@ dreamcast (tracked in `configy-6b6` — flip `capabilities.nim` line 41 from
 `false` to `true` before this gate).
 
 ```bash
-# Flip configyFsWritable for dreamcast in src/configy/capabilities.nim:
-#   elif defined(dreamcast):  true  # flipped after Flycast round-trip (configy-6b6)
+# Flip configyFsWritable for dreamcast in src/configy/capabilities.nim line 41:
+#   elif defined(dreamcast):  true  # TEMP: Flycast write-path smoke (configy-4xb)
+# (Revert to false after the smoke passes — the permanent flip is configy-6b6)
 
-# Build
-./scripts/build_dreamcast_write.sh
+# Build (Docker-based; nim on host, sh-elf-gcc+KOS link in Docker)
+./scripts/build_dreamcast_docker.sh verify/dreamcast/dreamcast_write_smoke.nim
 
 # Run in Flycast with a VMU inserted at slot a1
 flycast -elf dreamcast_write_smoke.elf

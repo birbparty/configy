@@ -38,7 +38,7 @@ const
 const configyFsWritable* =
   when defined(emscripten): false
   elif defined(psp):        false
-  elif defined(dreamcast):  false  # read-only until Flycast VMU round-trip verified
+  elif defined(dreamcast):  false  # read-only until Flycast VMU round-trip verified (configy-6b6)
   else:                     true
 
 const configyVendor {.strdefine.} = ""
