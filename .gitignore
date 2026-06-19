@@ -1,5 +1,8 @@
 # Nim build artifacts
 nimcache/
+# Per-target nimcache dirs created by scripts/build_dreamcast_cdi.sh
+nimcache_cdi_*/
+nimcache_dc_*/
 *.o
 *.so
 *.dylib

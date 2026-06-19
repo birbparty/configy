@@ -13,9 +13,11 @@
 ## AssertionDefect is a Defect, not a CatchableError, so the `step` template
 ## would not catch it and all steps after it would be unreported.
 ##
-## When configyFsWritable=false (current default for dreamcast), write steps
-## report FAIL:writeConfigJson: target is read-only. This is expected until
-## configy-6b6 flips the flag and configy-4xb verifies this smoke on Flycast.
+## Status: PASSES on Flycast AND redream (all steps PASS, isWritable=true) with
+## configyFsWritable=true (configy-6b6). Enabling this required the configy-cbj
+## fix: dreamcast must NOT use -d:useMalloc (see nim.cfg) — sharing one newlib
+## heap between Nim ARC and KOS VMU/maple-DMA buffers corrupted adjacent Nim
+## chunks and hung the round-trip. EMULATOR-ONLY: not yet run on real hardware.
 ##
 ## Compiled ONLY with -d:dreamcast; configy/vmu for hardware-state diagnostics.
 
@@ -89,9 +91,20 @@ proc run(): string =
   L.add "RESULT=" & (if anyFail: "FAIL" else: "PASS")
   result = L.join("\n") & "\n"
 
+proc thd_sleep(ms: cint) {.importc: "thd_sleep", header: "<kos/thread.h>".}
+  ## KOS cooperative sleep — yields the CPU for `ms` milliseconds.
+
 proc main() =
+  # Run the write round-trip exactly once; capture the report, then broadcast it
+  # on a loop so a host-side reader can attach to Flycast's SCIF pty at any time.
+  # A one-shot echo + exit is uncatchable (KOS exits in ms, before a reader can
+  # attach). newlib stdout is block-buffered (SCIF is not a TTY) — flush each
+  # batch. See dreamcast_smoke.nim for the full rationale.
   let report = run()
-  echo "== configy Dreamcast write-path gate =="
-  echo report
+  for _ in 0 ..< 40:  # ~20s capture window at 500ms cadence, then exit cleanly
+    echo "== configy Dreamcast write-path gate =="
+    echo report
+    flushFile(stdout)
+    thd_sleep(500)
 
 main()
