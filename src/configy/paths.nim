@@ -30,6 +30,7 @@ proc configRoot*(): string {.raises: [ConfigPathError].} =
   ##   PSP:        ms0:/PSP/config/<vendor>/
   ##   Vita:       ux0:data/config/<vendor>/
   ##   Dreamcast:  /vmu/a1/<vendor>/  (KOS fs_vmu mount; logical path hashed by vmu.nim)
+  ##               Layer 1 placeholder — I/O not wired until vmu.nim lands (configy-9a8)
   ##   WASM:       config/<vendor>/  (localStorage key prefix)
   ## On desktop, $XDG_CONFIG_HOME is used only when set, non-empty, and absolute.
   ## Raises ConfigPathError if HOME/USERPROFILE is unset and XDG_CONFIG_HOME is unusable.
