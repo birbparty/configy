@@ -112,6 +112,9 @@ proc freeBlocks*(): int {.raises: [].} =
 import ./vmu_hash
 export vmu_hash  # re-export so callers can reach hashFilename via vmu
 
+import ./errors
+import ./capabilities  # VendorNamespace ({.strdefine.} configyVendor)
+
 # ── Default icon (32×32, 4bpp, 1 frame) ──────────────────────────────────────
 #
 # A minimal placeholder glyph for the BIOS file manager.
@@ -204,24 +207,112 @@ const vmuDefaultIconData*: array[512, uint8] = [
   0x22'u8, 0x22'u8, 0x22'u8, 0x22'u8, 0x22'u8, 0x22'u8, 0x22'u8, 0x22'u8,
 ]
 
-# ── Forward: public write/read/delete/exists procs (configy-70t / configy-2n9) ─
-#
-# proc writeVmuFile*(logicalPath: string; payload: string)
-#   Canonical pattern: vmu_pkg_build → vmufs_write → c_free(vmsBuf) in finally.
-#   The c_free MUST be in a finally block so it runs even if vmufs_write fails.
-#
-# proc readVmuFile*(logicalPath: string): string
-#   Canonical ordering (all steps required before any free):
-#     1. var outbuf: pointer = nil  (init nil; only free if rc >= 0)
-#     2. vmufs_read → rc check; raise on rc < 0 (outbuf not allocated)
-#     3. vmu_pkg_parse → CRC check; raise on -1
-#     4. copy pkg.data_len bytes out of pkg.data  (pkg.data borrows into outbuf)
-#     5. c_free(outbuf) in finally (after copy, NOT before)
-#
-# proc existsVmuFile*(logicalPath: string): bool
-# proc deleteVmuFile*(logicalPath: string): bool
-#   Returns true if the file was deleted, false if it did not exist (idempotent).
-#   Raises ConfigIOError on vmufs_delete == -2 (other failure).
-#   Matches deleteConfig's bool (removed/absent) contract.
-#
-# These depend on hashFilename and will land in subsequent tasks.
+# ── VMS packaging helpers ─────────────────────────────────────────────────────
+
+proc fillPaddedStr(dst: var openArray[char]; src: string) {.inline.} =
+  # Space-pad a char array from src. KOS metadata fields are space-padded,
+  # NOT NUL-padded; padding with spaces is the correct on-disk format.
+  let n = min(src.len, dst.len)
+  for i in 0 ..< n:        dst[i] = src[i]
+  for i in n ..< dst.len:  dst[i] = ' '
+
+proc buildVmuPkg(payload: string): VmuPkg =
+  # Populate a VmuPkg for vmu_pkg_build. The returned struct BORROWS payload's
+  # cstring in the `data` field — payload must outlive this struct across the
+  # vmu_pkg_build call.
+  fillPaddedStr(result.desc_short, VendorNamespace & " config")
+  fillPaddedStr(result.desc_long,  VendorNamespace & " configy data")
+  fillPaddedStr(result.app_id,     VendorNamespace)
+  result.icon_cnt        = 1.cint
+  result.icon_anim_speed = 255.cint
+  result.eyecatch_type   = vmupkgEcNone
+  result.data_len        = cint(payload.len)
+  result.icon_pal        = vmuDefaultIconPal
+  result.icon_data       = cast[ptr uint8](unsafeAddr vmuDefaultIconData[0])
+  result.eyecatch_data   = nil
+  result.data            = cast[ptr uint8](cstring(payload))
+
+# ── Public write / read / exists / delete ────────────────────────────────────
+
+proc writeVmuFile*(logicalPath: string; payload: string) =
+  ## Write payload to the VMU at slot a1 under logicalPath.
+  ## VMS-packages the payload (required for BIOS memory manager visibility).
+  ## Raises ConfigIOError if the VMU is absent, packaging fails, or write fails.
+  # Capacity pre-check (freeBlocks vs needed blocks) is tracked as configy-5pq.
+  # Without it, a full VMU fails at vmufs_write with "vmufs_write failed" rather
+  # than the intended "VMU full (N blocks free, need M)" message from errors.nim.
+  let dev = vmuSlotA1()
+  if dev == nil:
+    raise newException(ConfigIOError, "VMU not present (slot a1)")
+  # ARC keep-alive invariant: buildVmuPkg borrows payload's buffer (non-sink param
+  # under ARC → no copy, no destroy; pkg.data points at writeVmuFile's payload).
+  # payload must not be moved or sunk before vmu_pkg_build returns.
+  var pkg = buildVmuPkg(payload)
+  var vmsBuf: ptr uint8 = nil
+  var vmsSize: cint = 0
+  if vmu_pkg_build(addr pkg, addr vmsBuf, addr vmsSize) < 0:
+    raise newException(ConfigIOError,
+      "vmu_pkg_build failed for " & logicalPath)
+  # vmsBuf is C-malloc'd from here; free even if vmufs_write fails
+  try:
+    let fn = hashFilename(logicalPath)
+    if vmufs_write(dev, cstring(fn), vmsBuf, vmsSize, vmufsOverwrite) < 0:
+      raise newException(ConfigIOError,
+        "vmufs_write failed for " & logicalPath)
+  finally:
+    c_free(vmsBuf)
+
+proc readVmuFile*(logicalPath: string): string =
+  ## Read and unwrap a VMS-packaged payload from the VMU at slot a1.
+  ## Raises ConfigIOError if the VMU is absent or the read fails.
+  ## Raises ConfigParseError if the VMS CRC check fails.
+  let dev = vmuSlotA1()
+  if dev == nil:
+    raise newException(ConfigIOError, "VMU not present (slot a1)")
+  var outbuf: pointer = nil  # nil: only c_free when rc >= 0
+  var outsize: cint = 0
+  let fn = hashFilename(logicalPath)
+  if vmufs_read(dev, cstring(fn), addr outbuf, addr outsize) < 0:
+    raise newException(ConfigIOError,
+      "vmufs_read failed for " & logicalPath)
+  # outbuf is C-malloc'd from here; pkg.data borrows into it — copy first
+  try:
+    var pkg: VmuPkg
+    if vmu_pkg_parse(cast[ptr uint8](outbuf), csize_t(outsize),
+                     addr pkg) < 0:
+      raise newException(ConfigParseError,
+        "VMU file CRC check failed for " & logicalPath)
+    result = newString(pkg.data_len)
+    if pkg.data_len > 0:
+      copyMem(addr result[0], pkg.data, pkg.data_len)
+  finally:
+    c_free(outbuf)
+
+proc existsVmuFile*(logicalPath: string): bool =
+  ## Returns true if a file exists on the VMU for logicalPath.
+  ## Uses a read-probe (VMU has no stat/exists call); returns false if the
+  ## VMU is absent or the file is not found.
+  let dev = vmuSlotA1()
+  if dev == nil: return false
+  var outbuf: pointer = nil
+  var outsize: cint = 0
+  let fn = hashFilename(logicalPath)
+  let rc = vmufs_read(dev, cstring(fn), addr outbuf, addr outsize)
+  if rc >= 0:
+    c_free(outbuf)
+    return true
+  return false
+
+proc deleteVmuFile*(logicalPath: string): bool =
+  ## Delete the VMU file for logicalPath. Returns true if deleted, false if
+  ## the file was not found (idempotent; matches deleteConfig's bool contract).
+  ## Raises ConfigIOError if the VMU is absent or deletion fails (-2).
+  let dev = vmuSlotA1()
+  if dev == nil:
+    raise newException(ConfigIOError, "VMU not present (slot a1)")
+  let fn = hashFilename(logicalPath)
+  let rc = vmufs_delete(dev, cstring(fn))
+  if rc == 0:  return true   # deleted
+  if rc == -1: return false  # not found — idempotent
+  raise newException(ConfigIOError,
+    "vmufs_delete failed for " & logicalPath)
