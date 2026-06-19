@@ -26,10 +26,12 @@ proc configRoot*(): string {.raises: [ConfigPathError].} =
   ## The platform config prefix up to and including the vendor namespace,
   ## with a trailing separator. Values:
   ##   Desktop (Linux/macOS/Windows): $XDG_CONFIG_HOME/<vendor>/  (fallback: ~/.config/<vendor>/)
-  ##   3DS:  sdmc:/config/<vendor>/
-  ##   PSP:  ms0:/PSP/config/<vendor>/
-  ##   Vita: ux0:data/config/<vendor>/
-  ##   WASM: config/<vendor>/  (localStorage key prefix)
+  ##   3DS:        sdmc:/config/<vendor>/
+  ##   PSP:        ms0:/PSP/config/<vendor>/
+  ##   Vita:       ux0:data/config/<vendor>/
+  ##   Dreamcast:  /vmu/a1/<vendor>/  (KOS fs_vmu mount; logical path hashed by vmu.nim)
+  ##               Layer 1 placeholder — I/O not wired until vmu.nim lands (configy-9a8)
+  ##   WASM:       config/<vendor>/  (localStorage key prefix)
   ## On desktop, $XDG_CONFIG_HOME is used only when set, non-empty, and absolute.
   ## Raises ConfigPathError if HOME/USERPROFILE is unset and XDG_CONFIG_HOME is unusable.
   when defined(ds3):
@@ -38,6 +40,11 @@ proc configRoot*(): string {.raises: [ConfigPathError].} =
     result = "ms0:/PSP/config/" & VendorNamespace & "/"
   elif defined(vita):
     result = "ux0:data/config/" & VendorNamespace & "/"
+  elif defined(dreamcast):
+    # KOS mounts the VMU at /vmu/a1/ (port A, slot 1 — the standard save slot).
+    # This is a LOGICAL path; vmu.nim hashes it to a ≤12-char uppercase VMU filename.
+    # Never call getHomeDir()/getEnv() here: HOME is unset on KOS → ConfigPathError.
+    result = "/vmu/a1/" & VendorNamespace & "/"
   elif defined(emscripten):
     result = "config/" & VendorNamespace & "/"
   else:
