@@ -241,7 +241,8 @@ proc buildVmuPkg(payload: string): VmuPkg =
 
 # ── Public write / read / exists / delete ────────────────────────────────────
 
-proc writeVmuFile*(logicalPath: string; payload: string) =
+proc writeVmuFile*(logicalPath: string; payload: string)
+    {.raises: [ConfigIOError].} =
   ## Write payload to the VMU at slot a1 under logicalPath.
   ## VMS-packages the payload (required for BIOS memory manager visibility).
   ## Raises ConfigIOError if the VMU is absent, packaging fails, or write fails.
@@ -276,7 +277,8 @@ proc writeVmuFile*(logicalPath: string; payload: string) =
   finally:
     c_free(vmsBuf)
 
-proc readVmuFile*(logicalPath: string): string =
+proc readVmuFile*(logicalPath: string): string
+    {.raises: [ConfigIOError, ConfigParseError].} =
   ## Read and unwrap a VMS-packaged payload from the VMU at slot a1.
   ## Raises ConfigIOError if the VMU is absent or the read fails.
   ## Raises ConfigParseError if the VMS CRC check fails.
@@ -302,7 +304,7 @@ proc readVmuFile*(logicalPath: string): string =
   finally:
     c_free(outbuf)
 
-proc existsVmuFile*(logicalPath: string): bool =
+proc existsVmuFile*(logicalPath: string): bool {.raises: [].} =
   ## Returns true if a file exists on the VMU for logicalPath.
   ## Uses a read-probe (VMU has no stat/exists call); returns false if the
   ## VMU is absent or the file is not found.
@@ -317,7 +319,7 @@ proc existsVmuFile*(logicalPath: string): bool =
     return true
   return false
 
-proc deleteVmuFile*(logicalPath: string): bool =
+proc deleteVmuFile*(logicalPath: string): bool {.raises: [ConfigIOError].} =
   ## Delete the VMU file for logicalPath. Returns true if deleted, false if
   ## the file was not found (idempotent; matches deleteConfig's bool contract).
   ## Raises ConfigIOError if the VMU is absent or deletion fails (-2).
