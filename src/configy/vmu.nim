@@ -109,8 +109,9 @@ proc freeBlocks*(): int {.raises: [].} =
 proc vmuIsWritable*(): bool {.raises: [].} =
   ## Returns true only if a VMU is present at slot a1 AND has at least one
   ## free 512-byte block. False on Maple not up / no VMU inserted / full card.
-  ## Used by fs.isWritable() to reconcile the compile-time configyFsWritable
-  ## flag with actual runtime device state. Null-safe; never panics.
+  ## Best-effort heuristic — a true result does not guarantee a subsequent write
+  ## succeeds (card could be write-protected, FAT corrupt, or removed afterwards).
+  ## Intended for use by fs.isWritable() on dreamcast; wired in configy-pw6.
   let dev = vmuSlotA1()
   if dev == nil: return false
   int(vmufs_free_blocks(dev)) > 0  # negative (FS error) → false; 0 (full) → false
