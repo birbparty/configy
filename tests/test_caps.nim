@@ -120,4 +120,8 @@ suite "capability consts — Dreamcast (-d:dreamcast) [PENDING: will fail until 
       check configyFsWritable == false
 
     test "isWritable() returns false on Dreamcast (no VMU runtime probe yet)":
+      # NOTE: when configyFsWritable flips to true (task configy-6b6), isWritable()
+      # becomes a runtime maple probe (vmu.isPresent()), NOT a mirror of the const.
+      # Update this assertion based on probe behavior under host/Flycast-no-VMU, not
+      # by mechanically copying the configyFsWritable pin above.
       check isWritable() == false

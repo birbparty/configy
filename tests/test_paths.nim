@@ -173,6 +173,13 @@ when defined(ds3):
       check configFile("myapp", "s.json") == "sdmc:/config/" & VendorNamespace & "/myapp/s.json"
 
 when defined(dreamcast):
+  # Three coordinated edits must land together for this suite to go green (seam-map.md):
+  #   1. configRoot() dreamcast arm in paths.nim — configy-c45
+  #   2. configyUsesOsPath excludes dreamcast in capabilities.nim — configy-as0
+  #      (Without this, configDir uses $DirSep. On KOS DirSep='/' so paths can pass
+  #      by accident — the configyUsesOsPath == false pin in test_caps.nim is the
+  #      real contract guard, not the literal "/" strings here.)
+  #   3. configyFsWritable == false arm in capabilities.nim — configy-as0
   suite "configRoot — Dreamcast [PENDING: will fail until paths.nim arm lands]":
     test "Dreamcast root is /vmu/a1/<vendor>/":
       check configRoot() == "/vmu/a1/" & VendorNamespace & "/"
