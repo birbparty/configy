@@ -38,6 +38,8 @@ proc vmufs_write(dev: ptr MapleDevice; fn: cstring; inbuf: pointer;
 proc vmufs_read(dev: ptr MapleDevice; fn: cstring; outbuf: ptr pointer;
                 outsize: ptr cint): cint
   {.importc: "vmufs_read", header: "dc/vmufs.h".}
+  # *outbuf is C-malloc'd ONLY on success (rc >= 0). On failure (rc < 0), *outbuf
+  # is NOT allocated — do NOT call c_free. Always initialise outbuf = nil before call.
 
 proc vmufs_delete(dev: ptr MapleDevice; fn: cstring): cint
   {.importc: "vmufs_delete", header: "dc/vmufs.h".}
@@ -65,7 +67,9 @@ type
 
 proc vmu_pkg_build(src: ptr VmuPkg; dst: ptr ptr uint8; dst_size: ptr cint): cint
   {.importc: "vmu_pkg_build", header: "dc/vmu_pkg.h".}
-  # Allocates *dst via C malloc(). Caller must c_free(*dst) after vmufs_write returns.
+  # *dst is C-malloc'd ONLY on success (rc >= 0). On failure (rc < 0), *dst is NOT
+  # allocated — do NOT c_free. On success, caller must c_free(*dst) in a finally
+  # block that also covers vmufs_write failure (i.e. free on all exit paths once allocated).
 
 proc vmu_pkg_parse(data: ptr uint8; data_size: csize_t; pkg: ptr VmuPkg): cint
   {.importc: "vmu_pkg_parse", header: "dc/vmu_pkg.h".}
@@ -98,10 +102,12 @@ proc isPresent*(): bool {.raises: [].} =
 
 proc freeBlocks*(): int {.raises: [].} =
   ## Returns the number of free 512-byte blocks on the a1 VMU.
-  ## Returns 0 if no VMU is present. Never hard-code a threshold — always query.
+  ## Returns 0 if no VMU is present or the FS is unreadable. Never hard-code a
+  ## threshold — always query. Negative KOS error codes are clamped to 0.
   let dev = vmuSlotA1()
   if dev == nil: return 0
-  int(vmufs_free_blocks(dev))
+  result = int(vmufs_free_blocks(dev))
+  if result < 0: result = 0
 
 # ── Forward: hashFilename (configy-70t) ──────────────────────────────────────
 #
@@ -113,7 +119,17 @@ proc freeBlocks*(): int {.raises: [].} =
 # ── Forward: public write/read/delete/exists procs (configy-70t / configy-2n9) ─
 #
 # proc writeVmuFile*(logicalPath: string; payload: string)
+#   Canonical pattern: vmu_pkg_build → vmufs_write → c_free(vmsBuf) in finally.
+#   The c_free MUST be in a finally block so it runs even if vmufs_write fails.
+#
 # proc readVmuFile*(logicalPath: string): string
+#   Canonical ordering (all steps required before any free):
+#     1. var outbuf: pointer = nil  (init nil; only free if rc >= 0)
+#     2. vmufs_read → rc check; raise on rc < 0 (outbuf not allocated)
+#     3. vmu_pkg_parse → CRC check; raise on -1
+#     4. copy pkg.data_len bytes out of pkg.data  (pkg.data borrows into outbuf)
+#     5. c_free(outbuf) in finally (after copy, NOT before)
+#
 # proc existsVmuFile*(logicalPath: string): bool
 # proc deleteVmuFile*(logicalPath: string)
 #
