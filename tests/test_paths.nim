@@ -171,3 +171,16 @@ when defined(ds3):
       check configDir("myapp") == "sdmc:/config/" & VendorNamespace & "/myapp/"
     test "3DS dep-less configFile":
       check configFile("myapp", "s.json") == "sdmc:/config/" & VendorNamespace & "/myapp/s.json"
+
+when defined(dreamcast):
+  suite "configRoot — Dreamcast [PENDING: will fail until paths.nim arm lands]":
+    test "Dreamcast root is /vmu/a1/<vendor>/":
+      check configRoot() == "/vmu/a1/" & VendorNamespace & "/"
+    test "Dreamcast dep-less configDir uses / not DirSep":
+      check configDir("myapp") == "/vmu/a1/" & VendorNamespace & "/myapp/"
+    test "Dreamcast full configDir":
+      check configDir("myapp", "mylib") == "/vmu/a1/" & VendorNamespace & "/myapp/mylib/"
+    test "Dreamcast dep-less configFile":
+      check configFile("myapp", "s.json") == "/vmu/a1/" & VendorNamespace & "/myapp/s.json"
+    test "Dreamcast full configFile":
+      check configFile("myapp", "mylib", "s.json") == "/vmu/a1/" & VendorNamespace & "/myapp/mylib/s.json"
