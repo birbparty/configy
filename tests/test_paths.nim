@@ -171,3 +171,23 @@ when defined(ds3):
       check configDir("myapp") == "sdmc:/config/" & VendorNamespace & "/myapp/"
     test "3DS dep-less configFile":
       check configFile("myapp", "s.json") == "sdmc:/config/" & VendorNamespace & "/myapp/s.json"
+
+when defined(dreamcast):
+  # Three coordinated edits must land together for this suite to go green (seam-map.md):
+  #   1. configRoot() dreamcast arm in paths.nim — configy-c45
+  #   2. configyUsesOsPath excludes dreamcast in capabilities.nim — configy-as0
+  #      (Without this, configDir uses $DirSep. On KOS DirSep='/' so paths can pass
+  #      by accident — the configyUsesOsPath == false pin in test_caps.nim is the
+  #      real contract guard, not the literal "/" strings here.)
+  #   3. configyFsWritable == false arm in capabilities.nim — configy-as0
+  suite "configRoot — Dreamcast [PENDING: will fail until paths.nim arm lands]":
+    test "Dreamcast root is /vmu/a1/<vendor>/":
+      check configRoot() == "/vmu/a1/" & VendorNamespace & "/"
+    test "Dreamcast dep-less configDir uses / not DirSep":
+      check configDir("myapp") == "/vmu/a1/" & VendorNamespace & "/myapp/"
+    test "Dreamcast full configDir":
+      check configDir("myapp", "mylib") == "/vmu/a1/" & VendorNamespace & "/myapp/mylib/"
+    test "Dreamcast dep-less configFile":
+      check configFile("myapp", "s.json") == "/vmu/a1/" & VendorNamespace & "/myapp/s.json"
+    test "Dreamcast full configFile":
+      check configFile("myapp", "mylib", "s.json") == "/vmu/a1/" & VendorNamespace & "/myapp/mylib/s.json"
