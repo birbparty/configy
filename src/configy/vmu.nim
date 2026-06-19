@@ -219,6 +219,9 @@ const vmuDefaultIconData*: array[512, uint8] = [
 #     5. c_free(outbuf) in finally (after copy, NOT before)
 #
 # proc existsVmuFile*(logicalPath: string): bool
-# proc deleteVmuFile*(logicalPath: string)
+# proc deleteVmuFile*(logicalPath: string): bool
+#   Returns true if the file was deleted, false if it did not exist (idempotent).
+#   Raises ConfigIOError on vmufs_delete == -2 (other failure).
+#   Matches deleteConfig's bool (removed/absent) contract.
 #
 # These depend on hashFilename and will land in subsequent tasks.
