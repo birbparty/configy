@@ -1,11 +1,12 @@
 # Dreamcast Smoke Tests — Flycast Verification Steps
 
 Two gates: a **read-path** smoke and a **write-path** smoke. Both broadcast their
-result on KOS serial; capture it from the host via Flycast's serial pseudo-terminal.
+result on KOS serial; capture it from the host via the emulator's serial PTY.
 
-- **Read-path (`dreamcast_smoke`)**: PASSES on Flycast (2026-06-19).
-- **Write-path (`dreamcast_write_smoke`)**: HANGS at `write_json_z` — blocked by
-  **configy-cbj** (SH-4 VMU heap corruption). See the bottom of this file.
+- **Read-path (`dreamcast_smoke`)**: PASSES on Flycast + redream.
+- **Write-path (`dreamcast_write_smoke`)**: PASSES on Flycast + redream — all 13
+  steps, `isWritable=true`, `RESULT=PASS`. EMULATOR-ONLY (no real hardware yet).
+  Enabling it required the **configy-cbj** fix (see the bottom of this file).
 
 ## Prerequisites
 
@@ -69,16 +70,12 @@ RESULT=PASS
 ```
 
 PASS criteria: `exists_ok=true`, `read_ok=true`, `read_isNone=true`.
+(`configyFsWritable` now reports `true`; the snippet above predates that flip.)
 
-Note: this exercises the ABSENT-file path (`vmufs_read` returns <0, no buffer is
-allocated). Reading an EXISTING VMU file returns correct bytes but triggers the
-configy-cbj heap corruption — so the read path is proven safe only for absent
-files until cbj is fixed.
+## 2. Write-path gate (`dreamcast_write_smoke`) — PASSES
 
-## 2. Write-path gate (`dreamcast_write_smoke`) — BLOCKED (configy-cbj)
-
-Requires `configyFsWritable=true` for dreamcast (`capabilities.nim` line 41).
-With the flag flipped and built as above, this gate **hangs at `write_json_z`**:
+Requires `configyFsWritable=true` for dreamcast (now the default — configy-6b6).
+Built as above and run on Flycast + redream, all steps PASS:
 
 ```
 == configy Dreamcast write-path gate ==
@@ -87,37 +84,55 @@ ensure_create=PASS
 ensure_again=PASS
 write_json=PASS
 read_json=PASS
-<HANG at write_json_z — no further output>
+write_json_z=PASS
+read_json_z=PASS
+write_bytes=PASS
+read_bytes=PASS
+delete=PASS
+deleted_gone=PASS
+cleanup=PASS
+isWritable=true
+RESULT=PASS
 ```
 
-Do NOT flip `configy-6b6` until **configy-cbj** is resolved.
-
-When `configyFsWritable=false` (current default), the write steps instead report
-`FAIL:writeConfigJson: target is read-only` — expected.
+EMULATOR-ONLY: verified on Flycast + redream, not yet on real Dreamcast hardware.
 
 ## VMU slot
 
 Both tests use slot **a1** (port 0, unit 1). In Flycast: Settings → VMU → add a
 VMU to Port A1 before running.
 
-## configy-cbj — SH-4 VMU heap corruption (the write-path blocker)
+## configy-cbj — SH-4 VMU heap corruption (RESOLVED)
 
-A VMU **read of an existing file** followed by an allocation-heavy op (Snappy
-`compress` or `parseJson`) reliably hangs the next `malloc`. Diagnosis:
+Symptom: a VMU **read of an existing file** followed by an allocation-heavy op
+(Snappy `compress` / `parseJson`) hung the next `malloc`; the write round-trip
+hung at `write_json_z`.
 
-- Four consecutive writes (no reads) PASS; `write → read(existing) → write` hangs.
-- The hang point moves across binaries but is deterministic within one binary →
-  **layout-sensitive heap corruption**.
-- NOT fixable by build flags: persists at GCC `-O0`, Nim `--opt:none`, `--checks:on`.
-- NOT a configy logic bug: `vmufs_read` malloc/`c_free` balanced; `vmu_pkg_parse`
-  is memory-safe; Nim `VmuPkg` matches KOS `vmu_pkg_t` exactly (importc).
-- Likely root: the `--cpu:arm` proxy codegen for SH-4 + Nim ARC + `-d:useMalloc`
-  (shared KOS malloc heap), or a KOS allocator quirk — a platform-level risk
-  already flagged in `nim.cfg`.
+How it was isolated (all on emulator, serial-captured):
+- `write→read(existing)→write` hangs; hang point moves across binaries but is
+  deterministic within one → **layout-sensitive heap corruption**.
+- Reproduces on **both** Flycast and redream → not an emulator artifact.
+- Not compression, not the double-read, not the C→Nim `copyMem` alignment.
+- A **pure-C** control (same KOS VMU FFI, no Nim) is CLEAN → not a KOS bug.
+- A **minimal Nim** control (generic C `malloc`/`free` + Nim allocs) is CLEAN →
+  not generic FFI interleaving. The bug needs the real VMU FFI **and** the Nim
+  runtime together.
+
+Root cause: with `-d:useMalloc`, Nim's ARC allocations and KOS's VMU/maple-DMA
+buffers (the `malloc`'d target of a maple DMA read in `vmufs_read`) share ONE
+newlib heap; the VMU read path corrupts adjacent Nim heap chunks.
+
+Fix: drop `-d:useMalloc` for the dreamcast target in `nim.cfg` (keep
+`nimAllocPagesViaMalloc`), giving Nim its own page allocator separate from KOS's
+C/DMA-buffer heap. Validated against layout-luck: passes on Flycast + redream,
+`--opt:size` and `--opt:none`, and with injected arena-perturbing allocations;
+re-enabling `-d:useMalloc` deterministically reproduces the hang. 3DS/Vita keep
+`-d:useMalloc` (real filesystems, no maple DMA).
 
 ## Wiring
 
 ```
 dreamcast_smoke.nim        ← configy-h86 (PASS, closed)
-dreamcast_write_smoke.nim  ← configy-4xb (blocked by configy-cbj → gates configy-6b6)
+dreamcast_write_smoke.nim  ← configy-4xb (PASS) → unblocked configy-6b6 (flag flipped)
+                             after configy-cbj fix (drop -d:useMalloc)
 ```

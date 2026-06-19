@@ -13,17 +13,11 @@
 ## AssertionDefect is a Defect, not a CatchableError, so the `step` template
 ## would not catch it and all steps after it would be unreported.
 ##
-## When configyFsWritable=false (current default for dreamcast), write steps
-## report FAIL:writeConfigJson: target is read-only. This is expected until
-## configy-6b6 flips the flag and configy-4xb verifies this smoke on Flycast.
-##
-## ⚠ KNOWN HANG (configy-cbj): with configyFsWritable=true, this gate HANGS at
-## write_json_z on Flycast. Root cause is a layout-sensitive heap corruption in
-## the SH-4 VMU path: a VMU READ of an existing file followed by an allocation-
-## heavy op (Snappy compress / parseJson) trips the next malloc. Reproduces in
-## every build mode (GCC -O0, Nim --opt:none, --checks:on). The READ-path smoke
-## passes because it reads an ABSENT file (no buffer is ever allocated). Do not
-## flip configy-6b6 until configy-cbj is fixed.
+## Status: PASSES on Flycast AND redream (all steps PASS, isWritable=true) with
+## configyFsWritable=true (configy-6b6). Enabling this required the configy-cbj
+## fix: dreamcast must NOT use -d:useMalloc (see nim.cfg) — sharing one newlib
+## heap between Nim ARC and KOS VMU/maple-DMA buffers corrupted adjacent Nim
+## chunks and hung the round-trip. EMULATOR-ONLY: not yet run on real hardware.
 ##
 ## Compiled ONLY with -d:dreamcast; configy/vmu for hardware-state diagnostics.
 

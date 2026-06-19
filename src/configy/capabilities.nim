@@ -31,14 +31,18 @@ const
 #   (confirmed on-device, not just Vita3K).
 # PSP: configyFsWritable false until the SDK FS is verified (unverified on a real
 #   toolchain). WASM is false for v1 (localStorage writes not implemented).
-# Dreamcast: configyFsWritable false for Layer 1. Flip to true (task configy-6b6) only
-#   after a full write→read round-trip passes on Flycast emulator. VMU persistence
-#   requires vmu.nim KOS FFI (configy-9a8); until then the platform is read-only from
-#   configy's perspective. configyHasRealFs remains true (KOS fs_vmu is a real block FS).
+# Dreamcast: configyFsWritable is TRUE — the full VMU write→read round-trip
+#   (ensureConfigDir, writeConfigJson raw+Snappy, writeConfigBytes, read-backs,
+#   deleteConfig) passes on the Flycast AND redream emulators (configy-6b6, gated
+#   on configy-4xb). EMULATOR-ONLY: not yet verified on real Dreamcast hardware.
+#   Enabling writes required the configy-cbj fix (drop -d:useMalloc for dreamcast
+#   in nim.cfg — the shared newlib heap let KOS VMU/maple-DMA buffers corrupt
+#   adjacent Nim ARC chunks). configyHasRealFs remains true (KOS fs_vmu is a real
+#   block FS).
 const configyFsWritable* =
   when defined(emscripten): false
   elif defined(psp):        false
-  elif defined(dreamcast):  false  # read-only until Flycast VMU round-trip verified (configy-6b6)
+  elif defined(dreamcast):  true
   else:                     true
 
 const configyVendor {.strdefine.} = ""
