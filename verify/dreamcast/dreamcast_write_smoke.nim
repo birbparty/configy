@@ -29,12 +29,14 @@ const
 
 proc run(): string =
   var L: seq[string]
+  var anyFail = false
   template step(name: string, body: untyped) =
     try:
       body
       L.add name & "=PASS"
     except CatchableError as e:
       L.add name & "=FAIL:" & e.msg
+      anyFail = true
   proc check(cond: bool, msg: string) =
     if not cond: raise newException(ValueError, msg)
 
@@ -75,12 +77,16 @@ proc run(): string =
   step "deleted_gone":
     check(not configFileExists(App, File), "still present after delete")
 
-  # Clean up remaining test files so stale z.json/b.bin can't mask a re-run failure.
+  # Clean up all test files so stale state can't mask a broken write on re-run.
+  # rt.json is deleted by the `delete` step; clean it here too for the failure path
+  # (e.g. write_json passed but delete failed — rt.json would otherwise persist).
   step "cleanup":
+    discard deleteConfig(App, File)
     discard deleteConfig(App, "z.json")
     discard deleteConfig(App, "b.bin")
 
   L.add "isWritable=" & $isWritable()
+  L.add "RESULT=" & (if anyFail: "FAIL" else: "PASS")
   result = L.join("\n") & "\n"
 
 proc main() =

@@ -22,6 +22,7 @@ const
 
 proc runChecks(): string =
   var lines: seq[string]
+  var anyFail = false
   lines.add "configy dreamcast smoke result"
   lines.add "vmu_present=" & $isPresent()
   lines.add "vmu_free_blocks=" & $freeBlocks()
@@ -37,6 +38,7 @@ proc runChecks(): string =
   except CatchableError as e:
     lines.add "exists_ok=false"
     lines.add "exists_error=" & e.msg
+    anyFail = true
 
   # 2. readConfigJson — none() when file absent (must NOT raise on absent VMU/file).
   #    If probe.json was planted on the VMU beforehand, isSome=true and read_parsed
@@ -50,7 +52,9 @@ proc runChecks(): string =
   except CatchableError as e:
     lines.add "read_ok=false"
     lines.add "read_error=" & e.msg
+    anyFail = true
 
+  lines.add "RESULT=" & (if anyFail: "FAIL" else: "PASS")
   result = lines.join("\n") & "\n"
 
 proc main() =
