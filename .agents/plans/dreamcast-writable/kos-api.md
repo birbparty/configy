@@ -42,9 +42,9 @@ typedef struct maple_device {
 int vmufs_write(maple_device_t *dev, const char *fn, void *inbuf, int insize, int flags);
 /* Returns: 0 on success, <0 on failure */
 
-/* Read a file. Allocates *outbuf via malloc(); caller must free(). */
+/* Read a file. Allocates *outbuf via malloc(); caller must free() with C free(), not Nim dealloc. */
 int vmufs_read(maple_device_t *dev, const char *fn, void **outbuf, int *outsize);
-/* Returns: 0 on success, <0 on failure */
+/* Returns: 0 on success, <0 on failure. If <0, *outbuf is NOT allocated — do not free. */
 
 /* Delete a file. */
 int vmufs_delete(maple_device_t *dev, const char *fn);
@@ -65,6 +65,22 @@ typedef struct {
 ```
 VMU filenames are at most **12 bytes**, no null terminator in the on-disk struct.
 configy's hash must produce ≤12 uppercase ASCII chars.
+
+**cstring NUL invariant**: `vmufs_write(fn: cstring)` uses the C string until a NUL byte.
+The hash implementation MUST produce ≤11 chars so a 12th NUL byte fits, OR produce
+exactly 12 chars and rely on KOS truncating to `min(strlen, 12)` — the latter is fragile
+and relies on undocumented KOS behavior. **Recommended**: cap the hash to 11 chars to
+guarantee NUL safety regardless of KOS version.
+
+**Collision policy**: Two distinct logical paths can hash to the same ≤12-char name,
+silently overwriting each other on a 128 KB device. The plan must specify one of:
+- **Ignore** (accepted risk — document the collision probability given expected file counts)
+- **Detect and error** — check `existsVmuFile(hash)` on write; if exists and hash matches
+  a different logical path, raise `ConfigIOError("VMU filename collision")`
+- **Detect and probe** — append a suffix and retry (complex, changes hash parity invariant)
+
+For configy, **document as accepted risk** is appropriate: a typical deployment has
+<10 config files, making a 12-char-uppercase-namespace collision negligibly unlikely.
 
 **Low-level functions** (NOT used by configy directly — for reference only):
 ```c
@@ -100,12 +116,14 @@ typedef struct vmu_pkg {
 #define VMUPKG_EC_NONE  0   /* No eyecatch — use this for configy */
 
 /* Build: convert vmu_pkg_t → flat byte array for writing.
-   Allocates *dst via malloc(); caller must free().
+   Allocates *dst via C malloc(); caller must c_free(*dst) after vmufs_write returns.
+   src.data is BORROWED (caller still owns the payload buffer across this call).
    Returns: 0 on success, <0 on failure */
 int vmu_pkg_build(vmu_pkg_t *src, uint8_t **dst, int *dst_size);
 
 /* Parse: flat byte array → vmu_pkg_t (read path).
-   The pkg->data pointer will point into data buffer (do NOT free data while using pkg).
+   pkg->data BORROWS a pointer into the source `data` buffer — it is NOT a copy.
+   Do NOT free `data` until you have copied `pkg->data_len` bytes out of `pkg->data`.
    Returns: 0 on success, -1 on bad CRC */
 int vmu_pkg_parse(uint8_t *data, size_t data_size, vmu_pkg_t *pkg);
 ```
@@ -136,8 +154,88 @@ static inline int fs_vmu_set_header(file_t fd, const vmu_pkg_t *pkg);
 static inline int fs_vmu_set_default_header(const vmu_pkg_t *pkg);
 ```
 
-**Note for configy**: `vmufs_write` (higher-level) is preferred over raw fd I/O, because it
-handles the VMS header internally when given a pre-built `vmu_pkg_build` output.
+**Note for configy**: `vmufs_write` is preferred over raw fd I/O for simplicity. However,
+`vmufs_write` writes **whatever bytes you give it verbatim** — it does NOT add a VMS header
+automatically. For the file to be visible in the BIOS memory manager and parseable by
+`vmu_pkg_parse` on read-back, the write path MUST run `vmu_pkg_build` first and pass the
+resulting VMS-packaged buffer to `vmufs_write`. The `fs_vmu_set_header` / `fs_vmu_set_default_header`
+functions are for the fd-based VFS path only and are `static inline` (no linkable symbol —
+do not `importc` them; use `vmufs_write` + `vmu_pkg_build` instead).
+
+---
+
+## FFI Memory Ownership (CRITICAL — read before implementing)
+
+Three KOS functions allocate C-heap memory that Nim must release with C `free`, not
+`dealloc` or the GC. Wrong deallocation = crash or silent heap corruption.
+
+```nim
+proc c_free(p: pointer) {.importc: "free", header: "<stdlib.h>".}
+```
+
+### vmufs_read ownership
+
+```nim
+proc readVmuFile*(logicalPath: string): string =
+  let dev = vmuSlotA1()
+  if dev == nil: raise newException(ConfigIOError, "VMU not present")
+  var outbuf: pointer = nil
+  var outsize: cint = 0
+  let rc = vmufs_read(dev, hashFilename(logicalPath), addr outbuf, addr outsize)
+  if rc < 0:
+    # rc < 0 means outbuf was NOT allocated — do not free
+    raise newException(ConfigIOError, "vmufs_read failed: " & $rc)
+  # outbuf is now a C-malloc'd buffer owned by us
+  try:
+    var pkg: VmuPkg
+    if vmu_pkg_parse(cast[ptr uint8](outbuf), csize_t(outsize), addr pkg) < 0:
+      raise newException(ConfigParseError, "VMU file CRC check failed")
+    # pkg.data is a BORROW into outbuf — copy before freeing
+    result = newString(pkg.data_len)
+    copyMem(addr result[0], pkg.data, pkg.data_len)
+    # pkg.data_len, not outsize — don't include 512-byte block padding
+  finally:
+    c_free(outbuf)  # always free, even on exception
+```
+
+### vmu_pkg_build ownership
+
+```nim
+proc writeVmuFile*(logicalPath: string; payload: string) =
+  let dev = vmuSlotA1()
+  if dev == nil: raise newException(ConfigUnsupportedError, "VMU not present")
+  # Check capacity before attempting write
+  let needed = (payload.len + VMS_HEADER_OVERHEAD + 511) div 512
+  if int(vmufs_free_blocks(dev)) < needed:
+    raise newException(ConfigIOError, "VMU out of space")
+  var pkg = buildVmuPkg(payload)  # fill vmu_pkg_t with icon + payload
+  var vmsBuf: ptr uint8 = nil
+  var vmsSize: cint = 0
+  if vmu_pkg_build(addr pkg, addr vmsBuf, addr vmsSize) < 0:
+    raise newException(ConfigIOError, "vmu_pkg_build failed")
+  try:
+    let fn = hashFilename(logicalPath)
+    if vmufs_write(dev, fn, vmsBuf, vmsSize, VMUFS_OVERWRITE) < 0:
+      raise newException(ConfigIOError, "vmufs_write failed for " & logicalPath)
+  finally:
+    c_free(vmsBuf)  # always free the VMS-packaged buffer
+```
+
+**Notes**:
+- `pkg.data` (source payload) is caller-owned across `vmu_pkg_build` — it may be
+  the Nim `string.cstring` which is valid until the string is GC'd. Keep `payload`
+  alive across the call.
+- `VMS_HEADER_OVERHEAD` ≈ 128 bytes header + 512 bytes icon + padding. A static `const`
+  of 2 blocks (1024 bytes) is a safe conservative estimate for capacity checks.
+- `vmufs_write` writes the `vmsBuf` verbatim; no additional padding is needed as
+  `vmu_pkg_build` already rounds up to 512-byte block boundaries internally.
+  On read, use `pkg.data_len` (not block size) to bound the payload slice.
+
+### 512-byte block padding responsibility
+
+`vmu_pkg_build` is responsible for padding the output buffer to a 512-byte boundary.
+`vmufs_write` takes that pre-padded buffer. configy does **not** need to pad. On read,
+`pkg.data_len` gives the un-padded payload length — use it, not `outsize`.
 
 ---
 
@@ -177,6 +275,10 @@ proc vmu_pkg_build(src: ptr VmuPkg; dst: ptr ptr uint8; dst_size: ptr cint): cin
   {.importc: "vmu_pkg_build", header: "dc/vmu_pkg.h".}
 proc vmu_pkg_parse(data: ptr uint8; data_size: csize_t; pkg: ptr VmuPkg): cint
   {.importc: "vmu_pkg_parse", header: "dc/vmu_pkg.h".}
+# Note: VmuPkg mirrors the C struct layout; add a compile-time check:
+#   static_assert(sizeof(vmu_pkg_t) == sizeof(VmuPkg), "VmuPkg layout mismatch")
+# or keep VmuPkg opaque (use incompleteStruct + access via separate procs) if layout stability
+# across KOS versions is a concern.
 ```
 
 ---
@@ -198,15 +300,43 @@ proc freeBlocks*(): int {.raises: [].} =
 
 ---
 
+## VMS metadata defaults for configy
+
+When building a `vmu_pkg_t` for `vmu_pkg_build`, use these defaults:
+
+```nim
+proc buildVmuPkg(payload: string): VmuPkg =
+  # desc_short/desc_long/app_id: space-padded (not NUL-padded) in the on-disk header
+  copyMem(addr result.desc_short[0], cstring("configy"), 7)  # or app-specific if provided
+  copyMem(addr result.desc_long[0],  cstring("configy data"), 12)
+  copyMem(addr result.app_id[0],     cstring("configy"), 7)
+  result.icon_cnt        = 1          # one static frame
+  result.icon_anim_speed = 255        # max speed (irrelevant for 1 frame)
+  result.eyecatch_type   = 0          # VMUPKG_EC_NONE
+  result.data_len        = cint(payload.len)
+  result.icon_pal        = CONFIGY_VMU_ICON_PAL  # committed const (task configy-9e5)
+  result.icon_data       = addr CONFIGY_VMU_ICON_DATA[0]  # 512-byte committed const
+  result.eyecatch_data   = nil
+  result.data            = cast[ptr uint8](payload.cstring)
+  # Keep payload alive until vmu_pkg_build returns
+```
+
+---
+
 ## Critical constraints (confirmed from headers)
 
 | Constraint | Source | Value |
 |-----------|--------|-------|
-| Filename max length | `vmu_dir_t.filename[12]` | **12 bytes, no null terminator** |
-| File size granularity | vmufs.h docs | **512-byte blocks** |
+| Filename max length | `vmu_dir_t.filename[12]` | **≤11 chars recommended** (leave room for cstring NUL) |
+| File size granularity | `vmu_pkg_build` handles padding | **512-byte blocks; vmu_pkg_build pads; use `pkg.data_len` on read** |
 | Subdirectory support | vmufs.h + fs_vmu.h docs | **None — flat FS only** |
-| Free block query | `vmufs_free_blocks(dev)` | **Runtime — never hard-code 200** |
-| VMS CRC check | `vmu_pkg_parse` returns -1 on bad CRC | Must handle CRC failure as `ConfigParseError` |
+| Free block query | `vmufs_free_blocks(dev)` | **Runtime — never hard-code 200; check before write** |
+| VMS CRC check | `vmu_pkg_parse` returns -1 on bad CRC | Must handle as `ConfigParseError` |
 | Icon | `vmu_pkg_t.icon_data` | **512 bytes (32×32 4bpp), icon_pal[16] ARGB4444** |
 | Overwrite | `vmufs_write(..., VMUFS_OVERWRITE)` | Atomic delete-then-write |
 | Mutex | `vmufs_mutex_lock/unlock` | Higher-level `vmufs_*` functions manage internally |
+| vmufs_read alloc | C `malloc` | Must `c_free` in `finally`; don't free on rc<0 |
+| vmu_pkg_build alloc | C `malloc` | Must `c_free` in `finally` |
+| pkg.data borrow | Points into vmufs_read buffer | Copy `data_len` bytes before freeing the read buffer |
+| Collision policy | hash namespace is 11-char uppercase | Document as accepted risk for <10 files |
+| Capacity check | `vmufs_free_blocks` × 512 | Check before write; account for ≈2 block VMS overhead |
