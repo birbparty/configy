@@ -3,12 +3,21 @@ import configy/capabilities
 import configy/errors
 import configy/paths
 
+when defined(dreamcast):
+  import configy/vmu  # vmuIsWritable() for runtime VMU probe
+
 proc isWritable*(): bool {.raises: [].} =
   ## Returns true if this platform can persist config data.
-  ## v1: reflects the compile-time configyFsWritable const (no runtime probe).
-  ## Note: isWritable() is a platform capability flag, not a per-call guarantee —
+  ## On Dreamcast: compile-time configyFsWritable AND runtime VMU probe (vmuIsWritable).
+  ##   configyFsWritable is false until store.nim VMU dispatch is wired (configy-6b6);
+  ##   when true, the probe adds: absent/full VMU at runtime → false.
+  ## On all other platforms: reflects compile-time configyFsWritable const only.
+  ## Note: isWritable() is a best-effort indicator, not a per-call guarantee —
   ## ensureConfigDir can still raise ConfigIOError at runtime on writable platforms.
-  configyFsWritable
+  when defined(dreamcast):
+    configyFsWritable and vmuIsWritable()
+  else:
+    configyFsWritable
 
 proc createDirTree(dir: string) =
   ## Create `dir` and any missing parents.
@@ -20,7 +29,12 @@ proc createDirTree(dir: string) =
   ## hardware 2026-06-07; Azahar's host-passthrough SD masks it. See
   ## .agents/plans/3ds-writable/RESULTS.md.) So the ds3 branch creates only the real
   ## subdirs UNDER the device root, never touching the bare `device:/` prefix.
-  when defined(ds3):
+  ##
+  ## On Dreamcast, the VMU is a flat filesystem with no directory support.
+  ## ensureConfigDir returns the logical path as-is; createDirTree is a no-op.
+  when defined(dreamcast):
+    discard  # VMU is a flat FS — no dirs to create; path is used as a hash key only
+  elif defined(ds3):
     # Skip the "device:/" prefix: scan to the first ':' then past the following '/'.
     var p = 0
     while p < dir.len and dir[p] != ':': inc p
