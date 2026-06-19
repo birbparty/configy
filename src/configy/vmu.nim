@@ -86,9 +86,6 @@ const
   vmuPort* = 0.cint  # Port A
   vmuUnit* = 1.cint  # Unit 1 (slot 1 = a1)
 
-# Conservative overhead for capacity check: VMS header + icon + block rounding.
-# vmu_pkg_build pads to 512-byte blocks; we budget 2 blocks (1024 bytes) for overhead.
-const vmsOverheadBlocks* = 2
 
 proc vmuSlotA1(): ptr MapleDevice {.inline.} =
   maple_enum_dev(vmuPort, vmuUnit)
@@ -238,9 +235,6 @@ proc writeVmuFile*(logicalPath: string; payload: string) =
   ## Write payload to the VMU at slot a1 under logicalPath.
   ## VMS-packages the payload (required for BIOS memory manager visibility).
   ## Raises ConfigIOError if the VMU is absent, packaging fails, or write fails.
-  # Capacity pre-check (freeBlocks vs needed blocks) is tracked as configy-5pq.
-  # Without it, a full VMU fails at vmufs_write with "vmufs_write failed" rather
-  # than the intended "VMU full (N blocks free, need M)" message from errors.nim.
   let dev = vmuSlotA1()
   if dev == nil:
     raise newException(ConfigIOError, "VMU not present (slot a1)")
@@ -253,8 +247,18 @@ proc writeVmuFile*(logicalPath: string; payload: string) =
   if vmu_pkg_build(addr pkg, addr vmsBuf, addr vmsSize) < 0:
     raise newException(ConfigIOError,
       "vmu_pkg_build failed for " & logicalPath)
-  # vmsBuf is C-malloc'd from here; free even if vmufs_write fails
+  # vmsBuf is C-malloc'd from here; free even if capacity check or write fails
   try:
+    let neededBlocks = (int(vmsSize) + 511) div 512
+    let available = freeBlocks()
+    # Conservative check: when VMUFS_OVERWRITE deletes an existing file, the
+    # freed blocks are not credited here. Re-saving a config on a near-full card
+    # may produce a false-positive "VMU full" even if the overwrite would fit.
+    # This is safe (writes are only rejected, not silently broken), and acceptable
+    # given configy's typical <10 small files per card.
+    if available < neededBlocks:
+      raise newException(ConfigIOError,
+        "VMU full (" & $available & " blocks free, need " & $neededBlocks & ")")
     let fn = hashFilename(logicalPath)
     if vmufs_write(dev, cstring(fn), vmsBuf, vmsSize, vmufsOverwrite) < 0:
       raise newException(ConfigIOError,
