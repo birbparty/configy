@@ -28,6 +28,17 @@ tests/test_*
 /eboot.bin
 /param.sfo
 
+# Dreamcast verification gate build artifacts (scripts/build_dreamcast.sh, build_dreamcast_write.sh)
+/dreamcast_smoke.elf
+/dreamcast_smoke.cdi
+/dreamcast_smoke.bin
+/dreamcast_write_smoke.elf
+/dreamcast_write_smoke.cdi
+/dreamcast_write_smoke.bin
+# KOS romdisk / disc packaging intermediates
+*.iso
+*.nrg
+
 # Testament output
 testresults/
 
