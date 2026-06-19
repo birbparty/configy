@@ -26,16 +26,19 @@ REPO_ROOT="$PWD"
 KOS_BASE_DEFAULT="/Users/punk1290/dreamcast-toolchain/dc/kos"
 KOS_CC_BASE_DEFAULT="/Users/punk1290/dreamcast-toolchain/dc/sh-elf"
 
-# Source KOS environ.sh if it exists and vars are not already set.
-# This exports KOS_BASE, KOS_CC_BASE, KOS_CC, KOS_CFLAGS, KOS_LDFLAGS, KOS_LIBS, KOS_START.
-if [[ -z "${KOS_BASE:-}" ]] && [[ -f "$KOS_BASE_DEFAULT/environ.sh" ]]; then
-  # shellcheck source=/dev/null
-  source "$KOS_BASE_DEFAULT/environ.sh"
-fi
-
+# Source KOS environ.sh to get KOS_CC_BASE, KOS_LD_SCRIPT, KOS_LDFLAGS, KOS_START, etc.
+# Resolution order: if KOS_CC_BASE is not already set, source environ.sh from $KOS_BASE
+# (resolved first so a user-set $KOS_BASE is honoured, not just the default path).
 KOS_BASE="${KOS_BASE:-$KOS_BASE_DEFAULT}"
+if [[ -z "${KOS_CC_BASE:-}" ]] && [[ -f "$KOS_BASE/environ.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "$KOS_BASE/environ.sh"
+fi
 KOS_CC_BASE="${KOS_CC_BASE:-$KOS_CC_BASE_DEFAULT}"
-KOS_START="${KOS_START:-$KOS_BASE/kernel/arch/dreamcast/kernel/startup.o}"
+# KOS_START: environ.sh intentionally exports KOS_START="" on modern GCC (4+) —
+# the startup object is not a standalone file; it is pulled in via -lkallisti.
+# Do NOT default to a constructed path: on modern toolchains the file does not exist
+# and feeding it to the linker produces a hard failure.
 
 GCC="$KOS_CC_BASE/bin/sh-elf-gcc"
 VENDOR="${CONFIGY_VENDOR:-smoketest}"
@@ -65,15 +68,30 @@ echo "[build_dreamcast] KOS_BASE: $KOS_BASE"
 # --- Compile + link (cpu/os/opt base comes from @if dreamcast: in nim.cfg) ------
 # Pass resolved KOS paths on the nim c line so they OVERRIDE the static defaults
 # hardcoded in nim.cfg — this makes $KOS_BASE / $KOS_CC_BASE authoritative.
-# $KOS_START (KOS startup object) is passed here because nim.cfg cannot reference
-# shell variables; it must precede the KOS libraries in the link order.
+# KOS link flags (-nodefaultlibs, $KOS_LD_SCRIPT) are passed here because
+# nim.cfg cannot reference shell env variables. Both are required for a correct
+# KOS link (see environ_base.sh KOS_LDFLAGS construction).
 echo "[build_dreamcast] Compiling $SRC for -d:dreamcast (KOS sh-elf os:linux+newlib)..."
+
+# Build KOS_START and KOS_LD_SCRIPT passL args conditionally — modern GCC sets
+# KOS_START="" (no standalone startup object); only inject if the file actually exists.
+START_ARG=()
+if [[ -n "${KOS_START:-}" && -f "$KOS_START" ]]; then
+  START_ARG=(--passL:"$KOS_START")
+fi
+LD_SCRIPT_ARG=()
+if [[ -n "${KOS_LD_SCRIPT:-}" ]]; then
+  LD_SCRIPT_ARG=(--passL:"$KOS_LD_SCRIPT")
+fi
+
 nim c -d:dreamcast -d:release -d:configyVendor="$VENDOR" \
   --arm.linux.gcc.path:"$KOS_CC_BASE/bin" \
   --passC:"-I$KOS_BASE/include" \
   --passC:"-I$KOS_BASE/kernel/arch/dreamcast/include" \
   --passL:"-L$KOS_BASE/lib/dreamcast" \
-  --passL:"$KOS_START" \
+  "${LD_SCRIPT_ARG[@]}" \
+  --passL:"-nodefaultlibs" \
+  "${START_ARG[@]}" \
   --path:src --path:verify/dreamcast \
   --out:"$OUT_ELF" "$SRC"
 
