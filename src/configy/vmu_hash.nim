@@ -9,7 +9,9 @@
 # Encoding  : base-36 (0-9, A-Z), 11 uppercase chars, big-endian digit order
 # NUL safety: 11 chars + Nim string's implicit NUL = 12 bytes
 #             ≤ vmu_dir_t.filename[12] (the on-disk field never includes a NUL)
-# Collision  : accepted risk — 36^11 ≈ 4.7×10^17 combinations; negligible for <10 files
+# Collision  : accepted risk — 36^11 ≈ 1.32×10^17 combinations (effective space;
+#              the 64-bit hash is truncated to 11 base-36 digits = ~57 bits);
+#              negligible for <10 files
 #
 # ⚠ WARNING: Changing the algorithm or output length orphans all previously-written
 # VMU files. A VMU holds only ~100KB of user saves; there is no migration path.
