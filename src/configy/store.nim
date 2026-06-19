@@ -9,6 +9,8 @@ import configy/fs
 export options, json
 when defined(emscripten):
   import configy/wasm
+when defined(dreamcast):
+  import configy/vmu  # writeVmuFile/readVmuFile/existsVmuFile/deleteVmuFile
 
 # ── Internal byte-level core ──────────────────────────────────────────────────
 
@@ -22,16 +24,22 @@ proc storeBytes(path: string; data: string; compress: bool) =
       else:        MagicRaw    & data
     except CatchableError as e:
       raise newException(ConfigIOError, "compression failed for " & path & ": " & e.msg)
-  try:
-    writeFile(path, payload)
-  except CatchableError as e:
-    raise newException(ConfigIOError, "write failed for " & path & ": " & e.msg)
+  when defined(dreamcast):
+    writeVmuFile(path, payload)  # VMS-wraps payload; raises ConfigIOError on failure
+  else:
+    try:
+      writeFile(path, payload)
+    except CatchableError as e:
+      raise newException(ConfigIOError, "write failed for " & path & ": " & e.msg)
 
 proc loadBytes(path: string): string =
   let raw =
-    try: readFile(path)
-    except CatchableError as e:
-      raise newException(ConfigIOError, "read failed for " & path & ": " & e.msg)
+    when defined(dreamcast):
+      readVmuFile(path)  # VMS-unwraps; raises ConfigIOError on absent/error, ConfigParseError on bad CRC
+    else:
+      try: readFile(path)
+      except CatchableError as e:
+        raise newException(ConfigIOError, "read failed for " & path & ": " & e.msg)
   if raw.len == 0:
     raise newException(ConfigParseError, "empty file (missing magic byte): " & path)
   case raw[0]
@@ -51,7 +59,10 @@ proc loadBytes(path: string): string =
       "unknown magic byte 0x" & raw[0].ord.toHex(2) & " — not a configy file: " & path)
 
 proc notFound(path: string): bool =
-  not fileExists(path)
+  when defined(dreamcast):
+    not existsVmuFile(path)  # returns false on absent VMU or absent file → notFound = true
+  else:
+    not fileExists(path)
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
@@ -274,13 +285,16 @@ proc deleteConfig*(app, filename: string): bool
       raise newException(ConfigUnsupportedError,
         "deleteConfig: target is read-only")
     let path = configFile(app, filename)
-    if notFound(path): return false
-    try:
-      removeFile(path)
-      return true
-    except CatchableError as e:
-      raise newException(ConfigIOError,
-        "deleteConfig failed for " & path & ": " & e.msg)
+    when defined(dreamcast):
+      return deleteVmuFile(path)  # true=deleted, false=not found, raises on VMU error
+    else:
+      if notFound(path): return false
+      try:
+        removeFile(path)
+        return true
+      except CatchableError as e:
+        raise newException(ConfigIOError,
+          "deleteConfig failed for " & path & ": " & e.msg)
 
 proc deleteConfig*(app, dep, filename: string): bool
     {.raises: [ConfigPathError, ConfigUnsupportedError, ConfigIOError].} =
@@ -295,13 +309,16 @@ proc deleteConfig*(app, dep, filename: string): bool
       raise newException(ConfigUnsupportedError,
         "deleteConfig: target is read-only")
     let path = configFile(app, dep, filename)
-    if notFound(path): return false
-    try:
-      removeFile(path)
-      return true
-    except CatchableError as e:
-      raise newException(ConfigIOError,
-        "deleteConfig failed for " & path & ": " & e.msg)
+    when defined(dreamcast):
+      return deleteVmuFile(path)  # true=deleted, false=not found, raises on VMU error
+    else:
+      if notFound(path): return false
+      try:
+        removeFile(path)
+        return true
+      except CatchableError as e:
+        raise newException(ConfigIOError,
+          "deleteConfig failed for " & path & ": " & e.msg)
 
 proc configFileExists*(app, filename: string): bool
     {.raises: [ConfigPathError].} =
@@ -309,6 +326,9 @@ proc configFileExists*(app, filename: string): bool
   when defined(emscripten):
     let key = configFile(app, filename)
     return wasm.hasItem(key)
+  elif defined(dreamcast):
+    let path = configFile(app, filename)
+    return existsVmuFile(path)
   else:
     let path = configFile(app, filename)
     return fileExists(path)
@@ -319,6 +339,9 @@ proc configFileExists*(app, dep, filename: string): bool
   when defined(emscripten):
     let key = configFile(app, dep, filename)
     return wasm.hasItem(key)
+  elif defined(dreamcast):
+    let path = configFile(app, dep, filename)
+    return existsVmuFile(path)
   else:
     let path = configFile(app, dep, filename)
     return fileExists(path)
