@@ -2,7 +2,7 @@ const
   configyHasRealFs* = not defined(emscripten)
     ## True on platforms with a real POSIX/SDK filesystem (not localStorage).
 
-  configyUsesOsPath* = not (defined(ds3) or defined(psp) or defined(vita) or defined(emscripten))
+  configyUsesOsPath* = not (defined(ds3) or defined(psp) or defined(vita) or defined(dreamcast) or defined(emscripten))
     ## True only on desktop/windows where std/os path operators are safe to use.
     ## Console and WASM paths must use plain string concatenation.
 
@@ -31,9 +31,14 @@ const
 #   (confirmed on-device, not just Vita3K).
 # PSP: configyFsWritable false until the SDK FS is verified (unverified on a real
 #   toolchain). WASM is false for v1 (localStorage writes not implemented).
+# Dreamcast: configyFsWritable false for Layer 1. Flip to true (task configy-6b6) only
+#   after a full write→read round-trip passes on Flycast emulator. VMU persistence
+#   requires vmu.nim KOS FFI (configy-9a8); until then the platform is read-only from
+#   configy's perspective. configyHasRealFs remains true (KOS fs_vmu is a real block FS).
 const configyFsWritable* =
   when defined(emscripten): false
   elif defined(psp):        false
+  elif defined(dreamcast):  false  # read-only until Flycast VMU round-trip verified
   else:                     true
 
 const configyVendor {.strdefine.} = ""
