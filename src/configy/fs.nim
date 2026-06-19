@@ -8,12 +8,14 @@ when defined(dreamcast):
 
 proc isWritable*(): bool {.raises: [].} =
   ## Returns true if this platform can persist config data.
-  ## On Dreamcast: runtime VMU probe via vmuIsWritable() (present at a1 + free blocks).
-  ## On all other platforms: reflects compile-time configyFsWritable const.
+  ## On Dreamcast: compile-time configyFsWritable AND runtime VMU probe (vmuIsWritable).
+  ##   configyFsWritable is false until store.nim VMU dispatch is wired (configy-6b6);
+  ##   when true, the probe adds: absent/full VMU at runtime → false.
+  ## On all other platforms: reflects compile-time configyFsWritable const only.
   ## Note: isWritable() is a best-effort indicator, not a per-call guarantee —
   ## ensureConfigDir can still raise ConfigIOError at runtime on writable platforms.
   when defined(dreamcast):
-    vmuIsWritable()
+    configyFsWritable and vmuIsWritable()
   else:
     configyFsWritable
 
