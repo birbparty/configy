@@ -238,10 +238,16 @@ proc writeVmuFile*(logicalPath: string; payload: string) =
   ## Write payload to the VMU at slot a1 under logicalPath.
   ## VMS-packages the payload (required for BIOS memory manager visibility).
   ## Raises ConfigIOError if the VMU is absent, packaging fails, or write fails.
+  # Capacity pre-check (freeBlocks vs needed blocks) is tracked as configy-5pq.
+  # Without it, a full VMU fails at vmufs_write with "vmufs_write failed" rather
+  # than the intended "VMU full (N blocks free, need M)" message from errors.nim.
   let dev = vmuSlotA1()
   if dev == nil:
     raise newException(ConfigIOError, "VMU not present (slot a1)")
-  var pkg = buildVmuPkg(payload)  # pkg.data borrows payload's cstring
+  # ARC keep-alive invariant: buildVmuPkg borrows payload's buffer (non-sink param
+  # under ARC → no copy, no destroy; pkg.data points at writeVmuFile's payload).
+  # payload must not be moved or sunk before vmu_pkg_build returns.
+  var pkg = buildVmuPkg(payload)
   var vmsBuf: ptr uint8 = nil
   var vmsSize: cint = 0
   if vmu_pkg_build(addr pkg, addr vmsBuf, addr vmsSize) < 0:
