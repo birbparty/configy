@@ -106,6 +106,15 @@ proc freeBlocks*(): int {.raises: [].} =
   result = int(vmufs_free_blocks(dev))
   if result < 0: result = 0
 
+proc vmuIsWritable*(): bool {.raises: [].} =
+  ## Returns true only if a VMU is present at slot a1 AND has at least one
+  ## free 512-byte block. False on Maple not up / no VMU inserted / full card.
+  ## Used by fs.isWritable() to reconcile the compile-time configyFsWritable
+  ## flag with actual runtime device state. Null-safe; never panics.
+  let dev = vmuSlotA1()
+  if dev == nil: return false
+  int(vmufs_free_blocks(dev)) > 0  # negative (FS error) → false; 0 (full) → false
+
 import ./vmu_hash
 export vmu_hash  # re-export so callers can reach hashFilename via vmu
 
