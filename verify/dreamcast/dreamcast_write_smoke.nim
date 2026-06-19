@@ -17,6 +17,14 @@
 ## report FAIL:writeConfigJson: target is read-only. This is expected until
 ## configy-6b6 flips the flag and configy-4xb verifies this smoke on Flycast.
 ##
+## ⚠ KNOWN HANG (configy-cbj): with configyFsWritable=true, this gate HANGS at
+## write_json_z on Flycast. Root cause is a layout-sensitive heap corruption in
+## the SH-4 VMU path: a VMU READ of an existing file followed by an allocation-
+## heavy op (Snappy compress / parseJson) trips the next malloc. Reproduces in
+## every build mode (GCC -O0, Nim --opt:none, --checks:on). The READ-path smoke
+## passes because it reads an ABSENT file (no buffer is ever allocated). Do not
+## flip configy-6b6 until configy-cbj is fixed.
+##
 ## Compiled ONLY with -d:dreamcast; configy/vmu for hardware-state diagnostics.
 
 import std/[json, options, strutils]
@@ -89,9 +97,20 @@ proc run(): string =
   L.add "RESULT=" & (if anyFail: "FAIL" else: "PASS")
   result = L.join("\n") & "\n"
 
+proc thd_sleep(ms: cint) {.importc: "thd_sleep", header: "<kos/thread.h>".}
+  ## KOS cooperative sleep — yields the CPU for `ms` milliseconds.
+
 proc main() =
+  # Run the write round-trip exactly once; capture the report, then broadcast it
+  # on a loop so a host-side reader can attach to Flycast's SCIF pty at any time.
+  # A one-shot echo + exit is uncatchable (KOS exits in ms, before a reader can
+  # attach). newlib stdout is block-buffered (SCIF is not a TTY) — flush each
+  # batch. See dreamcast_smoke.nim for the full rationale.
   let report = run()
-  echo "== configy Dreamcast write-path gate =="
-  echo report
+  for _ in 0 ..< 40:  # ~20s capture window at 500ms cadence, then exit cleanly
+    echo "== configy Dreamcast write-path gate =="
+    echo report
+    flushFile(stdout)
+    thd_sleep(500)
 
 main()

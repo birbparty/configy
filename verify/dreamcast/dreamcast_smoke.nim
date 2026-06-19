@@ -57,11 +57,22 @@ proc runChecks(): string =
   lines.add "RESULT=" & (if anyFail: "FAIL" else: "PASS")
   result = lines.join("\n") & "\n"
 
+proc thd_sleep(ms: cint) {.importc: "thd_sleep", header: "<kos/thread.h>".}
+  ## KOS cooperative sleep — yields the CPU for `ms` milliseconds.
+
 proc main() =
+  # Run the checks exactly once; capture the report.
   let report = runChecks()
-  echo "== configy Dreamcast read-path gate =="
-  echo report
-  # KOS: stdout → serial → Flycast serial terminal. No secondary write needed
-  # (unlike Vita, serial is reliably captured by Flycast without extra FFI).
+  # Broadcast the report on a loop. A one-shot echo + exit is uncatchable under
+  # Flycast: KOS runs main() to completion in milliseconds (before any host
+  # reader can attach to the SCIF pty) and exits. Continuously re-emitting the
+  # cached report — the same pattern inputty's example uses — lets a host-side
+  # reader attach at any time and capture a complete RESULT line. newlib stdout
+  # is block-buffered (SCIF is not a TTY), so flush after every batch.
+  for _ in 0 ..< 40:  # ~20s capture window at 500ms cadence, then exit cleanly
+    echo "== configy Dreamcast read-path gate =="
+    echo report
+    flushFile(stdout)
+    thd_sleep(500)
 
 main()
