@@ -109,12 +109,8 @@ proc freeBlocks*(): int {.raises: [].} =
   result = int(vmufs_free_blocks(dev))
   if result < 0: result = 0
 
-# ── Forward: hashFilename (configy-70t) ──────────────────────────────────────
-#
-# proc hashFilename*(logicalPath: string): cstring
-#   Produces a deterministic ≤11-char uppercase ASCII cstring from logicalPath.
-#   Implemented in task configy-70t (blocked on this task).
-#   Hash parity invariant: same logical path → same filename across write/read/delete/exists.
+import ./vmu_hash
+export vmu_hash  # re-export so callers can reach hashFilename via vmu
 
 # ── Forward: public write/read/delete/exists procs (configy-70t / configy-2n9) ─
 #
